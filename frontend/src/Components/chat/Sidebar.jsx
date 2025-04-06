@@ -33,6 +33,7 @@ const customLocale = {
 };
 
 const Sidebar = ({ conversations, setSelectedChat, lastMessage, loading }) => {
+  console.log( "Conversation", conversations)
   const { onlineUsers } = useSocket();
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -330,7 +331,7 @@ const Sidebar = ({ conversations, setSelectedChat, lastMessage, loading }) => {
 
               {/* Timestamp */}
               <p className="text-sm text-gray-500 whitespace-nowrap shrink-0 ml-2">
-                {formatDistanceToNow(new Date(conversation?.createdTime), {
+                {formatDistanceToNow(new Date(conversation?.updatedLastMessage?.updatedAt), {
                   addSuffix: true,
                   locale: customLocale,
                 })}

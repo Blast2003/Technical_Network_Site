@@ -32,6 +32,10 @@ const ChatPage = () => {
         sound.play();
       }
 
+      const res = await fetch("/api/message/");
+      const data = await res.json();
+      setConversations(data);
+      
       // Check if the new message's conversationId exists in the current conversations
       const conversationExists = conversations.some(
         (conv) => conv.conversationId === newMessage.conversationId

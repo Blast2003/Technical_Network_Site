@@ -207,7 +207,7 @@ export const getConversations = async (req, res) => {
           },
           where: { lastMessage: true }, // Get the last message flag
           order: [['createdAt', 'DESC']],
-          attributes: ['text', 'createdAt', 'img'],
+          attributes: ['text', 'createdAt', 'updatedAt', 'img'],
         });
 
         // Get the other participant's info (excluding current user)
@@ -223,7 +223,8 @@ export const getConversations = async (req, res) => {
         });
 
         return {
-          lastMessage: lastMessage ? lastMessage.text : '',
+          lastMessage: lastMessage ? lastMessage.text : "",
+          updatedLastMessage: lastMessage ? lastMessage: null,
           img: lastMessage ? lastMessage.img : '',
           conversationId: conversationId, // Get conversation ID directly
           createdTime: lastMessage ? lastMessage.createdAt : '',
