@@ -97,8 +97,10 @@ export const sendMessage = async (req, res) => {
 
       // Emit the new message to the recipient
       const recipientSocketId = getRecipientSocketId(recipientId);
-      if (recipientSocketId) {
+      const senderSocketId = getRecipientSocketId(senderId);
+      if (recipientSocketId && senderSocketId) {
           io.to(recipientSocketId).emit("newMessage", customNewMEssage);
+          io.to(senderSocketId).emit("newMessage", customNewMEssage);
       }
 
       return res.status(201).json(customNewMEssage);

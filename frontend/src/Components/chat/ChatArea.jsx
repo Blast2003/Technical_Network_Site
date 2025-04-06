@@ -58,7 +58,10 @@ const ChatArea = ({ selectedChat }) => {
     const handleNewMessage = (newMessage) => {
       // Only add the new message if it belongs to the selected conversation
       if (newMessage.conversationId !== selectedChat?.conversationId) return;
-  
+      
+       // current user => don't add new message
+       if (newMessage.sender === currentUser.id) return;
+
       // console.log("New Message: ", newMessage);
       setMessages((prevMessages) => [...prevMessages, newMessage]);
   
