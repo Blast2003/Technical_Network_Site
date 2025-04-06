@@ -503,7 +503,7 @@ export const getFeedPosts = async (req, res) => {
 		  ['createdAt', 'DESC'],
 		  ['id', 'DESC']
 		],
-		limit: 10,
+		limit: 5,
 	  });
   
 	  // Format posts for analysis
