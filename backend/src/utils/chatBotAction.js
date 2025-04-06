@@ -9,7 +9,7 @@ const conversations = {};
 function getKnowledgeContent() {
     try {
       return fs.readFileSync(
-        'C:\\Users\\Phi\\OneDrive - VietNam National University - HCM INTERNATIONAL UNIVERSITY\\Desktop\\Technical_Network_Site\\backend\\src\\utils\\knowledge.docx',
+        'C:\\Users\\Phi\\OneDrive - VietNam National University - HCM INTERNATIONAL UNIVERSITY\\Desktop\\Dev_Pre\\Technical_Network_Site\\backend\\src\\utils\\knowledge.docx',
         'utf8'
       ); 
     } catch (err) {

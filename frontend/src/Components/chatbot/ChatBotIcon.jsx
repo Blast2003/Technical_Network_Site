@@ -205,14 +205,12 @@ const ChatBotIcon = () => {
                       ${isBot ? "bg-gray-300 text-gray-800" : "bg-blue-600 text-white mb-5 mt-5"}
                     `}
                   >
-                    {isBot ? (
-                      // Render bot message as Markdown for better formatting.
+                    <div className="prose prose-ms">
                       <ReactMarkdown>
                         {msg.content}
                       </ReactMarkdown>
-                    ) : (
-                      msg.content
-                    )}
+                    </div>
+                    
                   </div>
                 </div>
               );
