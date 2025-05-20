@@ -59,7 +59,7 @@ import { Variables } from "../config/variables.js";
     ${JSON.stringify(userInfo, null, 2)}
 
 
-    I have 10 or fewer user-generated posts in the most recent time (each post in form of json object):
+    I have 5 or fewer user-generated posts in the most recent time (each post in form of json object):
     ${JSON.stringify(userPosts, null, 2)}
 
 

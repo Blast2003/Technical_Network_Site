@@ -32,6 +32,16 @@ const userSocketMap = {}; // userId: socketId
 io.on("connection", (socket) =>{
     console.log("user connected", socket.id);
 
+    // allow a client to join a room for a specific post:
+    socket.on("joinPostRoom", ({ postId }) => {
+        socket.join(`post_${postId}`);
+    });
+
+    // optional: leave room on disconnect
+    socket.on("leavePostRoom", ({ postId }) => {
+        socket.leave(`post_${postId}`);
+    });
+
     const userId = socket.handshake.query.userId;
 
     if(userId && userId != "undefined"){

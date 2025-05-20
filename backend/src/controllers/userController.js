@@ -454,7 +454,7 @@ export const getSuggestedUsers = async (req, res) => {
         ['createdAt', 'DESC'],
         ['id', 'DESC']
       ],
-      limit: 10,
+      limit: 5,
     });
     
     // Format posts as required

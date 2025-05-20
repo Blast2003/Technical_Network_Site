@@ -68,7 +68,7 @@ const SignInCard = () => {
         name: info?.name,
         username: info?.given_name, 
         email: info?.email,
-        password: String(info?.iat), 
+        password: String(info?.iat), //change iat => sub if can not use
         profilePic: info?.picture
       };
   

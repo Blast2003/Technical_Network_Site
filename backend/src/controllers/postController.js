@@ -325,10 +325,24 @@ export const likeUnlikePost = async (req, res) => {
 			await notification.destroy();
 		  }
 		}
+
+		// recalc total likes
+		const totalLikes = await PostLike.count({ where: { post_id: id } });
+		// console.log("Total Like count after unlike: ", totalLikes)
+		// broadcast to room
+		io.to(`post_${id}`).emit("postLikeUpdated", {
+		  postId: +id,
+		  isLiked: false,
+		  totalLikes,
+		});
+
 		return res.status(200).json({ message: "Post unliked successfully", isLiked: false });
 	  } else {
 		// Create the like if it doesn't exist.
 		await PostLike.create({ post_id: id, user_id: userId });
+
+		const totalLikes = await PostLike.count({ where: { post_id: id } });
+		console.log("Total Like count after like: ", totalLikes)
   
 		let notification;
 		// If the post owner is not the user liking the post, create a notification.
@@ -352,6 +366,14 @@ export const likeUnlikePost = async (req, res) => {
 			io.to(recipientSocketId).emit("newNotification", notification);
 		  }
 		}
+
+		// broadcast to room
+		io.to(`post_${id}`).emit("postLikeUpdated", {
+			postId: +id,
+			isLiked: true,
+			totalLikes,
+		  });
+		  
 		return res
 		  .status(200)
 		  .json({ message: "Post liked successfully", isLiked: true, notification });
@@ -435,8 +457,21 @@ export const replyToPost = async (req, res) => {
 		  io.to(recipientSocketId).emit("newNotification", notification);
 		}
 	  }
+
+	  	await transaction.commit();
+
+	  	// 1) recompute
+		const totalReplies = await PostReply.count({ where: { post_id: postId } });
+
+		console.log("Total Replies Server: ", totalReplies)
+
+		// 2) broadcast
+		io.to(`post_${postId}`).emit("postReplyUpdated", {
+		postId: parseInt(postId, 10),
+		totalReplies,
+		action: "added"
+		});
   
-	  await transaction.commit();
 	  res.status(201).json({
 		message: "Reply added successfully",
 		reply,
@@ -503,7 +538,7 @@ export const getFeedPosts = async (req, res) => {
 		  ['createdAt', 'DESC'],
 		  ['id', 'DESC']
 		],
-		limit: 10,
+		limit: 5,
 	  });
   
 	  // Format posts for analysis
@@ -752,8 +787,6 @@ export const getFeedPosts = async (req, res) => {
 	}
 };
   
-  
-
 
 // Get Recruitment posts
 export const getRecruitmentPosts = async (req, res) => {
@@ -1289,6 +1322,17 @@ export const deleteReply = async (req, res) => {
 	  }
   
 	  const deletedObj = await reply.destroy();
+
+	  const totalReplies = await PostReply.count({ where: { post_id: postId } });
+
+	  console.log("Total Replies Server: ", totalReplies)
+
+	  io.to(`post_${postId}`).emit("postReplyUpdated", {
+		postId: parseInt(postId, 10),
+		totalReplies,
+		action: "deleted"
+	  });
+
 	  res.status(200).json({ message: "Reply Deleted Successfully!", deletedObj });
 	} catch (error) {
 	  console.error("Error in deleteReply:", error.message);

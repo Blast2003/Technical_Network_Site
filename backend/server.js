@@ -8,6 +8,7 @@ import cors from "cors"
 import dotenv from "dotenv";
 import {v2 as cloudinary} from "cloudinary"
 import {app, server} from "./src/socket/socket.js"
+import { initLangChain } from "./src/lib/langchain.js";
 // import {Post} from "./src/models/postModel.js"
 
 dotenv.config();
@@ -35,12 +36,22 @@ app.use(cors());
 router(app);
 
 
-connectToDatabase()
-    .then(() => {
-        console.log("🚀 Starting server...");
-        server.listen(PORT, () => console.log(`✅ Server Listening on port: ${PORT}`));
-    })
-    .catch((err) => {
-        console.error("❌ Database connection failed. Shutting down server.");
-        process.exit(1);
-    });
+async function main() {
+  // 1) Connect to MySQL/TiDB
+  await connectToDatabase();
+  console.log("✅ Database connected");
+
+  // 2) Init LangChain + Ollama + SQLChain
+  await initLangChain();
+  console.log("✅ LangChain SQL chain initialized");
+
+  // 3) Start server (with socket)
+  server.listen(PORT, () => {
+    console.log(`🚀 Server listening on port ${PORT}`);
+  });
+}
+
+main().catch((err) => {
+  console.error("❌ Failed to start:", err);
+  process.exit(1);
+});
