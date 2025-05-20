@@ -156,6 +156,7 @@ const UserProfilePage = () => {
   // Fetch user profile data
   useEffect(() => {
     const fetchUserProfile = async () => {
+      setUserProfile(null);
       try {
         const response = await fetch(`/api/user/profile/${username}`);
         if (!response.ok) {
@@ -199,7 +200,7 @@ const UserProfilePage = () => {
           <ProfileSection
             id={userProfile.id}
             name={userProfile.name}
-            username={userProfile.username}
+            username={userProfile.username || username}
             profilePic={userProfile.profilePic}
             bio={userProfile.bio}
             position={userProfile.position}

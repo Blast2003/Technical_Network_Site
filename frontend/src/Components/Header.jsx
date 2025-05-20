@@ -7,6 +7,8 @@ import {
   ProfileOutlined,
   BellOutlined,
   FilterOutlined,
+  LikeOutlined,
+  MessageOutlined,
 } from "@ant-design/icons";
 import { NavLink, useParams, useNavigate, useLocation } from "react-router-dom";
 import { useRecoilValue } from "recoil";
@@ -55,6 +57,9 @@ const Header = () => {
   const [filterType, setFilterType] = useState("");
   const [sourceType, setSourceType] = useState("");
 
+  // toast for notification
+  const [toasts, setToasts] = useState([]);
+
   // New states for Reply Modal
   const [isReplyModalOpen, setIsReplyModalOpen] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState(null);
@@ -65,11 +70,19 @@ const Header = () => {
   const location = useLocation();
   const handleLogout = useLogout();
   const { socket } = useSocket();
+  const [isNavLinkClicked, setIsNavLinkClicked] = useState(false);
 
   // Refs for detecting outside clicks
   const bellRef = useRef(null);
   const dropdownRef = useRef(null);
   const filterRef = useRef(null);
+
+  // Sync searchTerm with URL query parameter on mount or location change
+  useEffect(() => {
+    const queryParams = new URLSearchParams(location.search);
+    const query = queryParams.get("q") || "";
+    setSearchTerm(query);
+  }, [location.search]);
 
   // Fetch notifications on mount
   useEffect(() => {
@@ -80,7 +93,6 @@ const Header = () => {
           throw new Error("Failed to fetch notifications");
         }
         const data = await res.json();
-        // console.log("Notification", data);
         setNotifications(data);
       } catch (error) {
         console.error("Error fetching notifications:", error);
@@ -123,11 +135,11 @@ const Header = () => {
   }, []);
 
   // Create a stable debounced function instance for search
+  // Create a stable debounced function instance for search
   const handleSearch = useMemo(
     () =>
       debounce((term, filterType, sourceType) => {
-        if (term) {
-          // Build URL with filter query params if available
+        if (term && !isNavLinkClicked) { // Only search if not a NavLink click
           let url = `/tech/search?q=${term}`;
           if (filterType) {
             url += `&filterType=${filterType}`;
@@ -137,21 +149,30 @@ const Header = () => {
           }
           navigate(url);
         }
+        setIsNavLinkClicked(false); // Reset the flag after potential navigation
       }, 500),
-    [navigate]
+    [navigate, isNavLinkClicked]
   );
 
-  // Update search on searchTerm or filter changes
+  // 1) Run search when searchTerm is non-empty
   useEffect(() => {
-    if (searchTerm.trim() === "" && location.pathname.includes("/search")) {
-      handleSearch.cancel();
-      navigate("/tech");
-      setIsFilterOpen((prev) => !prev);
-    } else {
+    if (searchTerm.trim()) {
       handleSearch(searchTerm, filterType, sourceType);
     }
-  }, [searchTerm, filterType, sourceType, location.pathname, navigate, handleSearch]);
+  }, [searchTerm, filterType, sourceType, handleSearch]);
 
+  // 2) Redirect back to /tech when URL has no `q` param on a search route
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const q = params.get("q")?.trim();
+    if (!q && location.pathname.includes("/search")) {
+      handleSearch.cancel();
+      navigate("/tech");
+      setIsFilterOpen(false);
+    }
+  }, [location.search, location.pathname, navigate, handleSearch]);
+
+  // Clear input when leaving search page
   useEffect(() => {
     if (!location.pathname.includes("/search")) {
       setSearchTerm("");
@@ -203,6 +224,10 @@ const Header = () => {
             }
             return [...prev];
           });
+
+          setTimeout(() => {
+            setToasts(prev => [...prev, { ...notification, id: Date.now() }]);
+          }, 2000);
         }
       };
 
@@ -214,12 +239,22 @@ const Header = () => {
     }
   }, [socket, user]);
 
+  // Remove toast after 2 seconds
+  useEffect(() => {
+    if (toasts.length > 0) {
+      const timer = setTimeout(() => {
+        setToasts(prev => prev.slice(1));
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [toasts]);
+
   // Real-time update deleted notifications 
   useEffect(() => {
     if (socket && user?.id) {
       const handleNotificationDeleted = (deletedNotification) => {
         setNotifications((prev) =>
-          prev.filter((n) => n.notification_id !== deletedNotification.notification_id)
+          prev. filter((n) => n.notification_id !== deletedNotification.notification_id)
         );
       };
 
@@ -264,8 +299,21 @@ const Header = () => {
     toggleNotifications();
   };
 
+  // Helper to pick icon
+  const iconFor = (action) => {
+    if (action.includes("new post")) return <HomeOutlined className="text-xl" />;
+    if (action.includes("liked")) return <LikeOutlined className="text-xl" />;
+    if (action.includes("replied")) return <MessageOutlined className="text-xl" />;
+    return <BellOutlined className="text-xl" />;
+  };
+
+  const handleNavLinkClick = () => {
+    setIsNavLinkClicked(true); // Set the flag when a NavLink is clicked
+  };
+
   return (
-    <header className="bg-gray-400 shadow-md">
+    <>
+      <header className="bg-gray-400 shadow-md">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           {/* Left Side: Search */}
@@ -366,7 +414,7 @@ const Header = () => {
           {/* Center: Home and Profile Icons */}
           <div className="flex items-center space-x-6">
             <NavLink
-              onClick={(e) => e.stopPropagation()}
+              onClick={handleNavLinkClick}
               to="/tech"
               end
               className={({ isActive }) =>
@@ -380,7 +428,7 @@ const Header = () => {
             </NavLink>
 
             <NavLink
-              onClick={(e) => e.stopPropagation()}
+              onClick={handleNavLinkClick}
               to={`/tech/profile/${user ? user.username : username}`}
               className={({ isActive }) =>
                 `flex items-center space-x-2 text-3xl cursor-pointer transition-all transform hover:bg-gray-500 hover:scale-105 rounded-full p-2 ${
@@ -513,6 +561,26 @@ const Header = () => {
         />
       )}
     </header>
+
+    {/* Toasts container */}
+    <div className="fixed bottom-4 left-4 z-50 space-y-3">
+        <AnimatePresence>
+          {toasts.map(toast => (
+            <motion.div
+              key={toast.id}
+              initial={{ opacity: 0, x: -50, scale: 0.8 }}
+              animate={{ opacity: 1, x: 0, scale: 1.1 }}
+              exit={{ opacity: 0, x: -50, scale: 0.8 }}
+              transition={{ type: "spring", stiffness: 300, damping: 20 }}
+              className="flex items-center space-x-3 bg-white border p-4 rounded-xl shadow-xl text-lg"
+            >
+              {iconFor(toast.action)}
+              <span className="text-base font-medium text-gray-800">{toast.action}</span>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+    </>
   );
 };
 

@@ -1,9 +1,50 @@
 import React, { useState, useEffect, useRef } from "react";
 import { FaRobot } from "react-icons/fa";
 import ReactMarkdown from "react-markdown";
+import { visit } from "unist-util-visit";
+import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
+
 
 // Utility function for delay
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Custom rehype plugin to transform bolded text into clickable links
+// Custom rehype plugin to transform bolded text and headings into clickable links
+const rehypeBoldToLink = () => {
+  return (tree) => {
+    visit(tree, "element", (node) => {
+      if (node.tagName === "strong" || /^h[1-6]$/.test(node.tagName)) {
+
+        // 1) pull out ALL of the text under this node:
+        const raw = toString(node);
+
+        // 2) clean it (strip numbers, slashes, &, punctuation, collapse spaces)
+        const cleaned = raw
+          .replace(/^\d+\.\s*/, "")    // remove leading “1. ”
+          .replace(/&/g, " ")          // turn “&” into space
+          .replace(/[^A-Za-z0-9 ]+/g, "") // drop any other symbol
+          .replace(/\s+/g, " ")         // collapse multiple spaces
+          .trim();
+
+        // 3) if there’s nothing left, don’t turn this into a link
+        if (!cleaned) return;
+
+        const searchTerm = encodeURIComponent(cleaned);
+
+        node.tagName = "a";
+        node.properties = {
+          ...node.properties,
+          href: `/tech/search?q=${searchTerm}`,
+          className:
+            "text-blue-600 hover:text-blue-800 hover:underline transition",
+          onClick: (e) => e.stopPropagation(),
+        };
+      }
+    });
+  };
+};
+
 
 const ChatBotIcon = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -12,6 +53,8 @@ const ChatBotIcon = () => {
   const [botIsTyping, setBotIsTyping] = useState(false);
   const [threadId, setThreadId] = useState(null);
   const [hasStarted, setHasStarted] = useState(false);
+
+  const textareaRef = useRef(null);
 
   // For auto-scrolling the chat container
   const chatContainerRef = useRef(null);
@@ -73,6 +116,10 @@ const ChatBotIcon = () => {
     addUserMessage(userMessage);
     setUserInput("");
 
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
+
     // Call the bot API
     if (threadId) {
       try {
@@ -110,6 +157,7 @@ const ChatBotIcon = () => {
             }
           }
         }
+
       } catch (error) {
         console.error("Error sending message:", error);
         addBotMessage("Oops, something went wrong. Please try again later.");
@@ -121,6 +169,12 @@ const ChatBotIcon = () => {
       addBotMessage("I can't find our conversation. Please refresh or try again.");
     }
   };
+
+  useEffect(() => {
+    if (textareaRef.current && userInput === "") {
+      textareaRef.current.style.height = "auto";
+    }
+  }, [userInput]);
 
   // Scroll to bottom whenever messages change
   useEffect(() => {
@@ -202,11 +256,14 @@ const ChatBotIcon = () => {
                       rounded-md 
                       text-sm 
                       break-words
-                      ${isBot ? "bg-gray-300 text-gray-800" : "bg-blue-600 text-white mb-5 mt-5"}
+                      ${isBot ? "bg-gray-300 " : "bg-blue-600  mb-5 mt-5"}
                     `}
                   >
-                    <div className="prose prose-ms">
-                      <ReactMarkdown>
+                    <div className={`prose prose-ms ${isBot ? "text-gray-800" : "text-white"}`}>
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        rehypePlugins={[rehypeRaw, rehypeBoldToLink]}
+                      >
                         {msg.content}
                       </ReactMarkdown>
                     </div>
@@ -226,38 +283,51 @@ const ChatBotIcon = () => {
             )}
           </div>
 
-          {/* Input Box */}
+          {/* Input Box */} 
           <form onSubmit={handleSendMessage} className="p-3 border-t border-gray-200">
             <div className="flex items-center space-x-2">
-              <input
-                type="text"
+              <textarea
+                ref={textareaRef}
+                rows={1}
                 placeholder="Type your message..."
                 className="
-                  w-full 
-                  border 
-                  border-gray-300 
-                  rounded-md 
-                  p-2 
-                  focus:outline-none 
-                  focus:ring-2 
-                  focus:ring-blue-600 
+                  w-full
+                  border
+                  border-gray-300
+                  rounded-md
+                  p-2
+                  focus:outline-none
+                  focus:ring-2
+                  focus:ring-blue-600
                   focus:border-transparent
+                  resize-none
+                  overflow-hidden
                 "
                 value={userInput}
-                onChange={(e) => setUserInput(e.target.value)}
+                onChange={e => {
+                  setUserInput(e.target.value);
+                  // auto-expand:
+                  e.target.style.height = "auto";
+                  e.target.style.height = e.target.scrollHeight + "px";
+
+                }}
               />
               <button
                 type="submit"
-                className="
-                  bg-blue-600 
-                  hover:bg-blue-700 
+                className={
+                  `
+                  ${botIsTyping ? 'bg-gray-600 ' : 'bg-blue-600 '}
+                  ${botIsTyping ? 'cursor-not-allowed' : 'cursor-pointer'}
+                  ${botIsTyping ? 'hover:bg-gray-600 ' : 'hover:bg-blue-700 '}
                   text-white 
                   px-4 
                   py-2 
                   rounded-md 
                   transition 
                   focus:outline-none
-                "
+                `
+                }
+                disabled={botIsTyping}
               >
                 Send
               </button>

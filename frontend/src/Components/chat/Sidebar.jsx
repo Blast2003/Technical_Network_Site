@@ -1,7 +1,7 @@
 import React, { useCallback, useState, useRef, useEffect } from "react";
 import { FaCircle } from "react-icons/fa";
 import { formatDistanceToNow } from "date-fns";
-import { useSocket } from "../../context/SocketContext";
+import { useSocket } from "../../Context/SocketContext";
 import { FileImageOutlined, SearchOutlined } from "@ant-design/icons";
 import { debounce } from "lodash";
 import { useSetRecoilState } from "recoil";

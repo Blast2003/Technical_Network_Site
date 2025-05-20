@@ -16,6 +16,7 @@ import { useRecoilValue, useSetRecoilState } from "recoil";
 import userAtom from "../../Atoms/userAtom";
 import userPostAtom from "../../Atoms/userPostAtom";
 import Linkify from "react-linkify";
+import { useSocket } from "../../Context/SocketContext";
 
 // Import the new ReplyModal
 import ReplyModal from "../../Components/modal/ReplyModal"; 
@@ -47,10 +48,41 @@ const PostCard = ({
   const currentUser = useRecoilValue(userAtom);
   const setUserPosts = useSetRecoilState(userPostAtom);
   const setFeedPosts = useSetRecoilState(feedPostAtom);
+  const { socket } = useSocket();
 
   // console.log("User Ids: ", LikedUserByIds)
 
   const navigate = useNavigate();
+
+  useEffect(() => {
+    socket.emit("joinPostRoom", { postId });
+  
+    const likeHandler = ({ postId: updatedId, totalLikes, isLiked }) => {
+      if (updatedId === postId) {
+        setLikeCount(totalLikes);
+        onLikeUpdate(postId, totalLikes, isLiked);
+      }
+    };
+    socket.on("postLikeUpdated", likeHandler);
+  
+    // new reply handler:
+    const replyHandler = ({ postId: updatedId, totalReplies, action }) => {
+      if (updatedId === postId) {
+        console.log("Total Replies Client: ", totalReplies)
+        setCommentCount(totalReplies);
+        // if you have a global onCommentUpdate, call it here:
+        // onCommentUpdate(postId, totalReplies, action === "added");
+      }
+    };
+    socket.on("postReplyUpdated", replyHandler);
+  
+    return () => {
+      socket.off("postLikeUpdated", likeHandler);
+      socket.off("postReplyUpdated", replyHandler);
+      socket.emit("leavePostRoom", { postId });
+    };
+  }, [postId, onLikeUpdate, socket]);
+  
 
   const handleDelete = async () => {
     if (!window.confirm("Are you sure you want to delete this post?")) return;
