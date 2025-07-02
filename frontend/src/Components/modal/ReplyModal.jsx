@@ -19,6 +19,7 @@ const ReplyModal = ({ isOpen, onCancel, postId, username }) => {
   const [replyContent, setReplyContent] = useState("");
   const [replyLoading, setReplyLoading] = useState(false);
 
+
   const setNewReply = useSetRecoilState(replyAtom);
   // Import global states for feed posts and user posts:
   const setFeedPosts = useSetRecoilState(feedPostAtom);
@@ -240,7 +241,7 @@ const ReplyModal = ({ isOpen, onCancel, postId, username }) => {
       height={700}
       centered
       bodyStyle={{
-        height: "70vh",
+        height: "80vh",
         overflowY: "auto",
       }}
       modalRender={(modal) => (
@@ -252,7 +253,7 @@ const ReplyModal = ({ isOpen, onCancel, postId, username }) => {
             left: "50%",
             transform: "translate(-50%, -50%)",
             width: "700px",
-            height: "80vh",
+            height: "90vh",
             background: "#fff",
             overflow: "hidden",
             borderRadius: "15px",

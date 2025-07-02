@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import { visit } from "unist-util-visit";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
+import { toString } from 'hast-util-to-string';
 
 
 // Utility function for delay
@@ -15,23 +16,29 @@ const rehypeBoldToLink = () => {
   return (tree) => {
     visit(tree, "element", (node) => {
       if (node.tagName === "strong" || /^h[1-6]$/.test(node.tagName)) {
-
-        // 1) pull out ALL of the text under this node:
+        // 1) get the raw text
         const raw = toString(node);
 
-        // 2) clean it (strip numbers, slashes, &, punctuation, collapse spaces)
-        const cleaned = raw
-          .replace(/^\d+\.\s*/, "")    // remove leading “1. ”
-          .replace(/&/g, " ")          // turn “&” into space
-          .replace(/[^A-Za-z0-9 ]+/g, "") // drop any other symbol
-          .replace(/\s+/g, " ")         // collapse multiple spaces
+        // 2) strip the number prefix, &, punctuation, collapse spaces
+        let cleaned = raw
+          .replace(/^\d+\.\s*/, "")
+          .replace(/&/g, " ")
+          .replace(/[^A-Za-z0-9 /]+/g, "")  // now allow slash
+          .replace(/\s+/g, " ")
           .trim();
 
-        // 3) if there’s nothing left, don’t turn this into a link
         if (!cleaned) return;
+
+        // 3) if there’s a slash, only take through the first slash (inclusive)
+        if (cleaned.includes("/")) {
+          // e.g. "UX/UI Design" → ["UX", "UI Design"]
+          const [beforeSlash] = cleaned.split("/");
+          cleaned = beforeSlash + "/";     // → "UX/"
+        }
 
         const searchTerm = encodeURIComponent(cleaned);
 
+        // 4) rewrite into an <a>
         node.tagName = "a";
         node.properties = {
           ...node.properties,
@@ -44,7 +51,6 @@ const rehypeBoldToLink = () => {
     });
   };
 };
-
 
 const ChatBotIcon = () => {
   const [isOpen, setIsOpen] = useState(false);

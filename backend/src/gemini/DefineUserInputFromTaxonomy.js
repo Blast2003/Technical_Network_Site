@@ -47,7 +47,7 @@ You have these five IT-Related Field taxonomies:
 Given this single user input (in plain text):
 "${userInput}"
 
-Return only the string containing exactly one of the taxonomy names above if the user's input clearly relates to it, or only return "Emerging Technologies" if none apply. Don't be allowed to output anything else.
+Return only the string containing exactly one of the taxonomy names above if the user's input clearly relates to it, or only return empty string if none apply. Don't be allowed to output anything else.
 `;
 
   const chat = model.startChat({

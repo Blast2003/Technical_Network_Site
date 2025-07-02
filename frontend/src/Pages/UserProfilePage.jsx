@@ -210,7 +210,12 @@ const UserProfilePage = () => {
           />
 
           <div className="space-y-4 mt-5">
-            {list.items.length === 0 && list.loadingState === 'loading' ? (
+            {list.loadingState === 'loading' ? (
+              <div className="flex flex-col items-center justify-center h-screen">
+                <img width="100" src={loader} alt="loader" />
+                <p>Fetching...</p>
+              </div>
+            ) : list.items.length === 0 ? (
               <div className="text-center py-8">
                 <div className="text-2xl font-bold text-gray-600 mb-4">
                   This user has no posts yet.

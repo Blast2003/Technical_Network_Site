@@ -1,14 +1,17 @@
 import React, { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import loader from "../assets/loader.svg";
-import { BankOutlined, UserOutlined, ReadOutlined } from "@ant-design/icons";
+import { ReadOutlined } from "@ant-design/icons";
 import PostCard from "../Components/feed/PostCard";
 import { useLocation, useNavigate } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
+import { useRecoilState, useRecoilValue } from "recoil";
+import userAtom from "../Atoms/userAtom";
+import feedPostAtom from "../Atoms/feedPostAtom";
 
 
 const SearchResults = () => {
-  const [posts, setPosts] = useState([]);
+  const [posts, setPosts] = useRecoilState(feedPostAtom);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const location = useLocation();
@@ -18,6 +21,13 @@ const SearchResults = () => {
   const filterType = queryParams.get("filterType");
   const sourceType = queryParams.get("sourceType");
   const [loading, setLoading] = useState(false);
+
+  const currentUser = useRecoilValue(userAtom);
+  
+  // reset the post for the first time
+  useEffect(() => {
+    setPosts([]);
+  }, []);  
 
   const fetchPosts = async (page) => {
     setLoading(true);
@@ -57,10 +67,14 @@ const SearchResults = () => {
   }, [query, filterType, sourceType]);
 
   useEffect(() => {
-    if (!query || query.trim() === "") {
-      navigate("/tech");
-    }
-  }, [query, navigate]);
+  if (
+    location.pathname === "/tech/search" &&
+    !location.search.includes("q=")
+  ) {
+    navigate("/tech", { replace: true });
+  }
+}, [location.pathname, location.search, navigate]);
+
 
   const handleShowMore = () => {
     if (currentPage < totalPages) {
@@ -70,23 +84,23 @@ const SearchResults = () => {
     }
   };
 
-  const handleLikeUpdate = (postId, newLikeCount) => {
-    setPosts((prevPosts) =>
-      prevPosts.map((post) =>
-        post.id === postId ? { ...post, likes: newLikeCount } : post
-      )
+  const handleLikeUpdate = (postId, newLikeCount, isLiked) => {
+    setPosts(prev =>
+      prev.map(post => {
+        if (post.id !== postId) return post;
+        // build the new array of liker‐ids
+        const updatedLikedUserIds = isLiked
+          ? Array.from(new Set([...(post.LikedUserIds || []), currentUser.id]))
+          : (post.LikedUserIds || []).filter(id => id !== currentUser.id);
+        return {
+          ...post,
+          TotalLikeNumber: newLikeCount,
+          LikedUserIds: updatedLikedUserIds,
+        };
+      })
     );
   };
 
-  const handleCommentUpdate = (postId, newCommentCount) => {
-    setPosts((prevPosts) =>
-      prevPosts.map((post) =>
-        post.id === postId
-          ? { ...post, TotalRepliesNumber: newCommentCount }
-          : post
-      )
-    );
-  };
 
   if (loading && posts.length === 0) {
     return (
@@ -113,19 +127,9 @@ const SearchResults = () => {
                 className="relative bg-gray-200 shadow-md rounded-lg p-6 transition-transform duration-500 hover:-translate-y-2.5"
               >
                 {post.type === "Recruitment" ? (
-                  <div className="absolute top-1 right-1 flex items-center bg-gray-200 rounded-full px-2 py-1 shadow">
-                    {post.sourceType === "enterprise" ? (
-                      <>
-                        <BankOutlined className="text-blue-600 mr-1" />
-                        <span className="text-sm">Enterprise</span>
-                      </>
-                    ) : post.sourceType === "freelancer" ? (
-                      <>
-                        <UserOutlined className="text-green-600 mr-1" />
-                        <span className="text-sm">Freelancer</span>
-                      </>
-                    ) : null}
-                  </div>
+                  <>
+
+                  </>
                 ) : (
                   <div className="absolute top-1 right-1 flex items-center bg-gray-200 rounded-full px-2 py-1 shadow">
                     <ReadOutlined className="text-gray-600 mr-1" />
@@ -145,12 +149,11 @@ const SearchResults = () => {
                   type={post.type}
                   hashtag={post.hashtag || ""}
                   sourceType={post.sourceType}
-                  LikedUserIds={post?.likedByUserIds || []}
+                  LikedUserByIds={post?.LikedUserIds || []}
                   likes={post.LikeCount || post.TotalLikeNumber || 0}
                   comments={post.TotalRepliesNumber || 0}
                   recommend={post.recommend || false}
                   onLikeUpdate={handleLikeUpdate}
-                  onCommentUpdate={handleCommentUpdate}
                 />
                 </div>
               </div>

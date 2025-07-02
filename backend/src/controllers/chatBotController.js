@@ -4,16 +4,16 @@ import {startConversation, chatResponse, isSupportedQuery, chatResponseFromQueri
 import { sequelize } from '../config/database.js';
 import { QueryTypes } from 'sequelize';
 
-function isQueryLeakRequest(message) {
-    const leakPatterns = [
-      /\bquery\b/i,
-      /\bsql\b/i,
-      /reuse your queries/i,
-      /give me the queries/i,
-      /show me the queries/i
-    ];
-    return leakPatterns.some((pattern) => pattern.test(message));
-  }
+// function isQueryLeakRequest(message) {
+//     const leakPatterns = [
+//       /\bquery\b/i,
+//       /\bsql\b/i,
+//       /reuse your queries/i,
+//       /give me the queries/i,
+//       /show me the queries/i
+//     ];
+//     return leakPatterns.some((pattern) => pattern.test(message));
+//   }
 
 export const openConversation = async (req, res) =>{
     try {

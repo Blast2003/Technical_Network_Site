@@ -7,18 +7,21 @@ import { SqlDatabase } from "langchain/sql_db";
 import { createSqlQueryChain } from "langchain/chains/sql_db";
 import { PromptTemplate } from "@langchain/core/prompts";
 
+import ollama from 'ollama';
+
 
 
 export let popularityChain, topicChain, llm, db;
 
 export async function initLangChain() {
   llm = new ChatOllama({
-    model: "llama3.2",
+     model: 'llama3.2',
     baseUrl: "http://localhost:11434",
     options: {
-      num_ctx: 4096,
-      num_thread: 4,
+      num_ctx: 2048,
+      num_thread: 8,
       temperature: 0,
+      stream: true 
     },
   });
 
@@ -107,12 +110,12 @@ You are a MySQL expert. Return a flat SELECT that:
   • Finds posts related to "{topic}".
   • Use only posts, postlikes, postreplies, userposts, users.
   • Exclude frozen users (users.isFrozen = true).
-  • **MUST** Match "{escaped_topic}" against posts.mainField and posts.title.
+  • **MUST** Match the literal string '{escaped_topic}' against p.mainField and p.title.
   • Compute LikesNumber and RepliesNumber. **MUST** include “ORDER BY LikesNumber DESC, RepliesNumber DESC”
   • **MUST** include “WHERE … {dateClause}” if provided  
   • **MUST** end with “LIMIT {top_k};” — do not remove or modify it  
 
-Query Format: -- Must Follow
+Query Format: -- Must Follow Exactly
 SELECT
     p.id,
     p.title,
@@ -128,7 +131,7 @@ LEFT JOIN postreplies pr ON pr.post_id = p.id
 JOIN userposts up ON up.post_id = p.id
 JOIN users u ON u.id = up.user_id
 WHERE u.isFrozen = false{dateClause}
-  AND (p.mainField LIKE CONCAT('%', {escaped_topic}, '%') OR p.title LIKE CONCAT('%', {escaped_topic}, '%')) 
+  AND (p.mainField LIKE CONCAT('%', '{escaped_topic}', '%') OR p.title LIKE CONCAT('%', '{escaped_topic}', '%')) 
 GROUP BY 
   p.id,
   p.title,
@@ -157,4 +160,132 @@ LIMIT {top_k};
     returnDirect: true,
     prompt: topicTemplate,
   });
+}
+
+export async function generatePopularityQuery(userInput, top_k, dateClause) {
+  const systemPrompt = `
+You are a MySQL expert. Return ONLY a single, flat SELECT that:
+
+  • Finds the {top_k} most popular posts  
+  • Uses only posts, postlikes, postreplies, userposts, users  
+  • Excludes frozen users (u.isFrozen = true)  
+  • Compute LikesNumber and RepliesNumber. **MUST** include “ORDER BY LikesNumber DESC, RepliesNumber DESC”
+  • **MUST** include “WHERE … {dateClause}” if provided  
+  • **MUST** end with “LIMIT {top_k};” — do not remove or modify it  
+
+Query Format: -- Must Follow
+SELECT
+    p.id,
+    p.title,
+    p.text,
+    p.type,
+    p.createdAt,
+    COUNT(DISTINCT pl.user_id) AS LikesNumber,
+    COUNT(DISTINCT pr.reply_id) AS RepliesNumber
+FROM posts p
+LEFT JOIN postlikes pl ON pl.post_id = p.id
+LEFT JOIN postreplies pr ON pr.post_id = p.id
+JOIN userposts up ON up.post_id = p.id
+JOIN users u ON u.id = up.user_id
+WHERE u.isFrozen = false {dateClause}
+GROUP BY 
+    p.id,
+    p.title,
+    p.text,
+    p.type,
+    p.mainField,
+    p.createdAt
+ORDER BY LikesNumber DESC, RepliesNumber DESC
+LIMIT {top_k};
+
+-- Return only the raw SQL, no markdown or explanation.
+
+-- User question:
+{userInput}
+
+-- Top K: {top_k}
+-- Table info:
+{posts: id, title, text, type, mainField, createdAt}
+{postlikes: post_id, user_id}
+{postreplies: post_id, reply_id}
+{userposts: post_id, user_id}
+{users: id, isFrozen}
+`.trim();
+
+  const res = await ollama.chat({
+     model: 'llama3.2',
+    baseUrl:   'http://localhost:11434', 
+    options: { num_ctx: 2048, num_thread: 8, temperature: 0 },
+    messages: [
+      { role: 'system', content: systemPrompt.replace('{top_k}', top_k).replace('{userInput}', userInput).replace('{dateClause}', dateClause) },
+      { role: 'user', content: userInput }
+    ]
+  });
+
+  return res.message.content.trim();
+}
+
+export async function generateTopicQuery(userInput, topic, escaped_topic, top_k, dateClause) {
+  const systemPrompt = `
+You are a MySQL expert. Return a flat SELECT that: 
+  • Finds posts related to "{topic}".
+  • Use only posts, postlikes, postreplies, userposts, users.
+  • Exclude frozen users (users.isFrozen = true).
+  • **MUST** Match the literal string '{escaped_topic}' against p.mainField and p.title.
+  • Compute LikesNumber and RepliesNumber. **MUST** include “ORDER BY LikesNumber DESC, RepliesNumber DESC”
+  • **MUST** include “WHERE … {dateClause}” if provided  
+  • **MUST** end with “LIMIT {top_k};” — do not remove or modify it  
+
+Query Format: -- Must Follow Exactly
+SELECT
+    p.id,
+    p.title,
+    p.text,
+    p.type,
+    p.mainField,
+    p.createdAt,
+    COUNT(DISTINCT pl.user_id) AS LikesNumber,
+    COUNT(DISTINCT pr.reply_id) AS RepliesNumber
+FROM posts p
+LEFT JOIN postlikes pl ON pl.post_id = p.id
+LEFT JOIN postreplies pr ON pr.post_id = p.id
+JOIN userposts up ON up.post_id = p.id
+JOIN users u ON u.id = up.user_id
+WHERE u.isFrozen = false{dateClause}
+  AND (p.mainField LIKE CONCAT('%', '{escaped_topic}', '%') OR p.title LIKE CONCAT('%', '{escaped_topic}', '%')) 
+GROUP BY 
+    p.id,
+    p.title,
+    p.text,
+    p.type,
+    p.mainField,
+    p.createdAt
+ORDER BY LikesNumber DESC, RepliesNumber DESC
+LIMIT {top_k};
+
+-- Return only the raw SQL, no markdown or explanation.
+
+-- User question:
+{userInput}
+
+-- Top K: {top_k}
+-- Table info:
+{posts: id, title, text, type, mainField, createdAt}
+{postlikes: post_id, user_id}
+{postreplies: post_id, reply_id}
+{userposts: post_id, user_id}
+{users: id, isFrozen}
+`.trim();
+
+  const res = await ollama.chat({
+     model: 'llama3.2',
+    baseUrl:   'http://localhost:11434', 
+    options: { num_ctx: 2048, num_thread: 8, temperature: 0 },
+    messages: [
+      { role: 'system', content: systemPrompt.replace('{top_k}', top_k).replace('{userInput}', userInput).replace('{dateClause}', dateClause).replace(/{escaped_topic}/g, escaped_topic).replace('{topic}', topic) },
+      { role: 'user', content: userInput }
+    ]
+  });
+
+  return res.message.content.trim();
 }

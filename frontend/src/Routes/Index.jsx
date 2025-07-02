@@ -32,7 +32,9 @@ const Index = () => {
 
           {/* <Route path="post/:username/:id" element={user ? <SpecificPostPage/> : <Navigate to="/signin"/>}/> */}
           <Route path="updateProfile/:id"  element={user ? <UpdateUserProfilePage/> : <Navigate to="/signin"/>} />
+
           <Route path="search" element={user ? <SearchResults/> : <Navigate to="/signin"/> }/>
+          
           <Route path="following" element={user ? <FollowingUsers/> : <Navigate to="/signin"/> }/>
           <Route path="freeze" element={user ? <FreezeAccountPage/> : <Navigate to="/signin"/>}/>
           <Route path="chat" element={user ? <ChatPage/> : <Navigate to="/signin"/>}/>

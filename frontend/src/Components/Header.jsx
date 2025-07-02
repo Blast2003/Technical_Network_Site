@@ -57,6 +57,8 @@ const Header = () => {
   const [filterType, setFilterType] = useState("");
   const [sourceType, setSourceType] = useState("");
 
+  console.log("searchTerm: ", searchTerm)
+
   // toast for notification
   const [toasts, setToasts] = useState([]);
 
@@ -174,10 +176,11 @@ const Header = () => {
 
   // Clear input when leaving search page
   useEffect(() => {
-    if (!location.pathname.includes("/search")) {
-      setSearchTerm("");
-    }
-  }, [location.pathname]);
+  if (!location.pathname.includes("/search")) {
+    setSearchTerm("");
+    handleSearch.cancel(); // Cancel any pending debounced search
+  }
+}, [location.pathname, handleSearch]);
 
   const activeClass = "text-blue-600";
   const inactiveClass = "text-gray-900";

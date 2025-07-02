@@ -11,6 +11,8 @@ const SuggestedFollows = () => {
   const [loadingId, setLoadingId] = useState(null);
   const navigate = useNavigate();
 
+  console.log("follow person: ", follow)
+
   useEffect(() => {
     const fetchSuggestedUser = async () => {
       try {

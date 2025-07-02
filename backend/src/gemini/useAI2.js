@@ -53,7 +53,7 @@ import { Variables } from "../config/variables.js";
     Security & Operations Management
     Emerging Technologies
 
-    Read the script below and only answer the name of taxonomy or the empty string "": 
+    Read the script below: 
 
     I have the user information in form of json (sometime the user is a new user and position or bio of them maybe is null or empty string):
     ${JSON.stringify(userInfo, null, 2)}
@@ -64,7 +64,9 @@ import { Variables } from "../config/variables.js";
 
 
     Give me the suggestion about their interesting, their trending that is one of 5 Taxonomy of IT-Related Fields that i provided. (only give me the answer that is the name of one taxonomy)
-    If the user information (in form of json) don't have or equal null and the user have not created any posts before (user-generated posts is empty array or null). (only give me the answer that is empty string).`;
+    If the user information (in form of json) don't have or equal null and the user have not created any posts before (user-generated posts is empty array or null). (only give me the answer that is empty string).
+    Only return the answer is the name of only one taxonomy or the empty string ""
+    `;
     
 
     // console.log(prompting)

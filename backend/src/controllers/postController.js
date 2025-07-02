@@ -556,6 +556,7 @@ export const getFeedPosts = async (req, res) => {
 	  // Analyze the user's trending field using AI
 	  let PredictUserTrending = await AnalyzeUserTrendingPostRecommendation(user, trueUserPosts);
 	  PredictUserTrending = PredictUserTrending.trim();
+
   
 	  // Retrieve the list of users the current user is following
 	  const following = await user.getFollowing({ attributes: ["id"] });
@@ -584,6 +585,7 @@ export const getFeedPosts = async (req, res) => {
 			mainField: PredictUserTrending,
 		  }
 		});
+
   
 		// Generate two random, distinct offsets
 		const offset1 = Math.floor(Math.random() * count);
@@ -1093,7 +1095,7 @@ export const getFilterPosts = async (req, res) => {
 		  postedBy: postData.Owners && postData.Owners[0] ? postData.Owners[0].id : null,
 		  UserName: postData.Owners && postData.Owners[0] ? postData.Owners[0].username : null,
 		  profilePic: postData.Owners && postData.Owners[0] ? postData.Owners[0].profilePic : null,
-		  likedByUserIds: postData.LikedByUsers ? postData.LikedByUsers.map(u => u.id) : [],
+		  LikedUserIds: postData.LikedByUsers ? postData.LikedByUsers.map(u => u.id) : [],
 		};
 	  });
   

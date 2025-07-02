@@ -22,6 +22,8 @@ const HomePage = () => {
   const { socket } = useSocket();
   const user = useRecoilValue(userAtom);
 
+  console.log("posts: ", posts)
+
   // Setup infinite scroll hooks:
   const { ref: loaderRef, inView } = useInView({ threshold: 0 });
   const list = useAsyncList({
@@ -37,33 +39,30 @@ const HomePage = () => {
       const data = await response.json();
       return {
         items: data.posts || [],
-        cursor: data.posts && data.posts.length === 5 ? pageNum + 1 : null,
+        cursor: data.posts && data.posts.length >= 5 ? pageNum + 1 : null,
       };
     },
     getKey: (item) => item.id,
   });
 
-  // reset the post for the first time
-  useEffect(() => {
-    setPosts([]);
-  }, []);  
-
-  // Update feed posts atom when list items change
-  useEffect(() => {
-    setPosts(list.items);
-  }, [list.items]);
-
-  // Update local isLoading state based on list loading state
-  useEffect(() => {
-    setIsLoading(list.loadingState === "loading");
-  }, [list.loadingState]);
-
-  // Load more posts when the loader comes into view
-  useEffect(() => {
-    if (inView && list.cursor !== null && list.loadingState !== "loadingMore") {
-      list.loadMore();
-    }
-  }, [inView, list.cursor, list.loadingState]);
+    // reset the post for the first time
+      useEffect(() => {
+        setPosts([]);
+      }, []);  
+  
+    // When the loader element is in view, load more posts.
+    useEffect(() => {
+      if (inView && list.cursor !== null && list.loadingState !== 'loadingMore') {
+        list.loadMore();
+      }
+    }, [inView, list.cursor, list.loadingState]);
+  
+    // Update your state with the items loaded by asyncList.
+    useEffect(() => {
+      setPosts(list.items);
+      setIsLoading(list.loadingState === "loading");
+  
+    }, [list.items, setPosts, list.loadingState]);
 
   // Listen for "notificationDeleted" event 
   useEffect(() => {

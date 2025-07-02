@@ -10,7 +10,7 @@ import {
   BankOutlined 
 } from "@ant-design/icons";
 import { CiBookmark } from "react-icons/ci";
-import {  useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { toast } from "react-toastify";
 import { useRecoilValue, useSetRecoilState } from "recoil";
 import userAtom from "../../Atoms/userAtom";
@@ -50,9 +50,7 @@ const PostCard = ({
   const setFeedPosts = useSetRecoilState(feedPostAtom);
   const { socket } = useSocket();
 
-  // console.log("User Ids: ", LikedUserByIds)
-
-  const navigate = useNavigate();
+  console.log("User Liked Ids: ", LikedUserByIds)
 
   useEffect(() => {
     socket.emit("joinPostRoom", { postId });
@@ -226,23 +224,31 @@ const PostCard = ({
       )}
 
       <div className="flex items-center space-x-4">
-        <img
-          src={profilePic || "https://placehold.co/32x32"}
-          alt={`${author}'s profile`}
-          onClick={() => {
-            navigate(`/tech/profile/${author}`);
-            setIsReplyModalOpen(false)
+        <Link
+          to={`/tech/profile/${author}`}
+          onClick={(e) => {
+            e.stopPropagation(); // Prevent event bubbling
+            setIsReplyModalOpen(false);
           }}
-          className="h-10 w-10 rounded-full cursor-pointer"
-          loading="lazy"
-        />
+        >
+          <img
+            src={profilePic || "https://placehold.co/32x32"}
+            alt={`${author}'s profile`}
+            className="h-10 w-10 rounded-full cursor-pointer"
+            loading="lazy"
+          />
+        </Link>
         <div className="flex flex-col">
-          <h2
-            onClick={() => navigate(`/tech/profile/${author}`)}
+          <Link
+            to={`/tech/profile/${author}`}
+            onClick={(e) => {
+              e.stopPropagation(); // Prevent event bubbling
+              setIsReplyModalOpen(false);
+            }}
             className="font-semibold hover:font-bold cursor-pointer"
           >
             {author}
-          </h2>
+          </Link>
           <p
             className="text-gray-500 text-sm cursor-pointer border-b border-gray-200 hover:border-gray-500 transition duration-300"
           >
