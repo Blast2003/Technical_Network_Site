@@ -16,6 +16,7 @@ import RecruitmentPage from '../Pages/RecruitmentPage'
 import Callback from '../Pages/CallBack'
 import NotFoundPage from '../Pages/NotFoundPage'
 import Career_Paths from '../Pages/Career_Paths'
+import SpecificPostPage from '../Pages/SpecificPostPage'
 
 const Index = () => {
   const user = useRecoilValue(userAtom)
@@ -30,7 +31,7 @@ const Index = () => {
 
           <Route path="profile/:username"  element={<UserProfilePage/>} />
 
-          {/* <Route path="post/:username/:id" element={user ? <SpecificPostPage/> : <Navigate to="/signin"/>}/> */}
+          <Route path="post/:id" element={user ? <SpecificPostPage/> : <Navigate to="/signin"/>}/>
           <Route path="updateProfile/:id"  element={user ? <UpdateUserProfilePage/> : <Navigate to="/signin"/>} />
 
           <Route path="search" element={user ? <SearchResults/> : <Navigate to="/signin"/> }/>

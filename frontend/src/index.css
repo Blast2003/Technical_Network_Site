@@ -32,5 +32,27 @@ input::-ms-reveal {
       box-shadow: 0.2rem 0 0 0 #555, 1.4rem 0 0 -0.2rem #555, 2.6rem 0 0 -0.4rem #555;
     }
   }
+
+  /* global.css (fallback) */
+.highlighted-text {
+  font-weight: 700; /* bold */
+  background: transparent; /* explicitly no background */
+}
+
+.badge-like {
+  font-weight: 600;
+  /* no background, no padding — purely bold text */
+}
+
+/* Link style for post URL */
+.post-link {
+  cursor: pointer;
+  font-weight: 700;
+  text-decoration: none;
+}
+.post-link:hover {
+  text-decoration: underline;
+}
+
   
 

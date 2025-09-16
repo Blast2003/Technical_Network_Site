@@ -12,42 +12,57 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Custom rehype plugin to transform bolded text into clickable links
 // Custom rehype plugin to transform bolded text and headings into clickable links
-const rehypeBoldToLink = () => {
+const rehypeHighlight = () => {
   return (tree) => {
+    // 1) Convert <strong> and headings -> <span class="highlighted-text font-bold">
     visit(tree, "element", (node) => {
       if (node.tagName === "strong" || /^h[1-6]$/.test(node.tagName)) {
-        // 1) get the raw text
         const raw = toString(node);
-
-        // 2) strip the number prefix, &, punctuation, collapse spaces
-        let cleaned = raw
-          .replace(/^\d+\.\s*/, "")
-          .replace(/&/g, " ")
-          .replace(/[^A-Za-z0-9 /]+/g, "")  // now allow slash
-          .replace(/\s+/g, " ")
-          .trim();
-
-        if (!cleaned) return;
-
-        // 3) if there’s a slash, only take through the first slash (inclusive)
-        if (cleaned.includes("/")) {
-          // e.g. "UX/UI Design" → ["UX", "UI Design"]
-          const [beforeSlash] = cleaned.split("/");
-          cleaned = beforeSlash + "/";     // → "UX/"
-        }
-
-        const searchTerm = encodeURIComponent(cleaned);
-
-        // 4) rewrite into an <a>
-        node.tagName = "a";
+        if (!raw) return;
+        node.tagName = "span";
         node.properties = {
           ...node.properties,
-          href: `/tech/search?q=${searchTerm}`,
-          className:
-            "text-blue-600 hover:text-blue-800 hover:underline transition",
-          onClick: (e) => e.stopPropagation(),
+          className: "highlighted-text font-bold"
         };
       }
+    });
+
+    // 2) Wrap "Likes: 8" and "Replies: 9" in inline span with bold text (no bg)
+    const badgeRegex = /\b(Likes\s*:?\s*\d+|Replies\s*:?\s*\d+)\b/gi;
+
+    visit(tree, "element", (node) => {
+      if (!node.children || !Array.isArray(node.children)) return;
+
+      const newChildren = [];
+
+      for (const child of node.children) {
+        if (child.type === 'text' && badgeRegex.test(child.value)) {
+          let text = child.value;
+          let lastIndex = 0;
+          badgeRegex.lastIndex = 0;
+          let m;
+          while ((m = badgeRegex.exec(text)) !== null) {
+            if (m.index > lastIndex) {
+              newChildren.push({ type: 'text', value: text.slice(lastIndex, m.index) });
+            }
+            const badgeText = m[0];
+            newChildren.push({
+              type: 'element',
+              tagName: 'span',
+              properties: { className: 'badge-like font-semibold' },
+              children: [{ type: 'text', value: badgeText }]
+            });
+            lastIndex = badgeRegex.lastIndex;
+          }
+          if (lastIndex < text.length) {
+            newChildren.push({ type: 'text', value: text.slice(lastIndex) });
+          }
+        } else {
+          newChildren.push(child);
+        }
+      }
+
+      if (newChildren.length) node.children = newChildren;
     });
   };
 };
@@ -268,7 +283,7 @@ const ChatBotIcon = () => {
                     <div className={`prose prose-ms ${isBot ? "text-gray-800" : "text-white"}`}>
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm]}
-                        rehypePlugins={[rehypeRaw, rehypeBoldToLink]}
+                        rehypePlugins={[rehypeRaw, rehypeHighlight]}
                       >
                         {msg.content}
                       </ReactMarkdown>

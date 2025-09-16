@@ -1,6 +1,6 @@
 // import {startConversation, chatResponse, analyzeQuestion, generateQueries, formatQueryResults, identifyTaxonomyKeywords, isSupportedQuery, categorizeTaxonomy, isSupportedTopics, chatResponseFromQueries} from "../utils/chatBotAction.js"
 
-import {startConversation, chatResponse, isSupportedQuery, chatResponseFromQueries} from "../utils/chatBotAction.js"
+  import {startConversation, chatResponse, isSupportedQuery, chatResponseFromQueries, parseTrendingRequest, chatTrendingSummary} from "../utils/chatBotAction.js"
 import { sequelize } from '../config/database.js';
 import { QueryTypes } from 'sequelize';
 
@@ -149,21 +149,26 @@ export const openConversation = async (req, res) =>{
 
 export const Chat = async (req, res) => {
   try {
-      const { thread_id, message } = req.body;
-      if (!thread_id || !message) {
-          return res.status(400).json({ error: 'Missing thread_id or message' });
-      }
+    const { thread_id, message } = req.body;
+    if (!thread_id || !message) {
+      return res.status(400).json({ error: 'Missing thread_id or message' });
+    }
 
-      if(!isSupportedQuery(message)){
-        const responseMessage = await chatResponse(thread_id, message);
-        return res.status(200).json({ response: responseMessage });
-      }
+    const trendRequest = parseTrendingRequest(message);
+    if (trendRequest) {
+      const summary = await chatTrendingSummary(thread_id, message);
+      return res.status(200).json({ response: summary });
+    }
 
-        const responseMessageFromQueriesResult = await chatResponseFromQueries(thread_id, message);
-        return res.status(200).json({ response: responseMessageFromQueriesResult });
+    if (!isSupportedQuery(message)) {
+      const response = await chatResponse(thread_id, message);
+      return res.status(200).json({ response });
+    }
 
-  } catch (error) {
-      console.error('Error in Chat controller:', error);
-      return res.status(500).json({ error: error.message });
+    const response = await chatResponseFromQueries(thread_id, message);
+    return res.status(200).json({ response });
+  } catch (err) {
+    console.error('Chat error:', err);
+    return res.status(500).json({ error: err.message });
   }
 };

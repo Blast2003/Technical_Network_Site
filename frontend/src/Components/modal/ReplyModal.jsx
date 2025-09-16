@@ -18,7 +18,8 @@ const ReplyModal = ({ isOpen, onCancel, postId, username }) => {
   const [ownerPost, setOwnerPost] = useState(null);
   const [replyContent, setReplyContent] = useState("");
   const [replyLoading, setReplyLoading] = useState(false);
-
+  const textareaRef = useRef(null);
+  const modalRef = useRef(null);
 
   const setNewReply = useSetRecoilState(replyAtom);
   // Import global states for feed posts and user posts:
@@ -26,7 +27,6 @@ const ReplyModal = ({ isOpen, onCancel, postId, username }) => {
   const setUserPosts = useSetRecoilState(userPostAtom);
   const currentUser = useRecoilValue(userAtom);
 
-  const modalRef = useRef(null);
 
   useEffect(() => {
     if (!isOpen) {
@@ -198,11 +198,19 @@ const ReplyModal = ({ isOpen, onCancel, postId, username }) => {
               likes={post?.LikeCount || post?.TotalLikeNumber || 0}
               comments={post?.TotalRepliesNumber || 0}
               onLikeUpdate={onLikeUpdateForModal}
+              onCommentIconClick={() => {
+                // focus the reply textarea below
+                if (modalRef.current) {
+                  const textarea = modalRef.current.querySelector("textarea");
+                  textarea?.focus();
+                }
+              }}
             />
 
             {/* New Reply Text Area */}
             <div className="my-4">
               <Input.TextArea
+                ref={textareaRef}
                 rows={4}
                 className="bg-gray-300"
                 placeholder="Reply goes here..."

@@ -38,7 +38,8 @@ const PostCard = ({
   likes,
   comments,
   recommend,
-  onLikeUpdate
+  onLikeUpdate,
+  onCommentIconClick  
 }) => {
   const [likeCount, setLikeCount] = useState(likes);
   const [commentCount, setCommentCount] = useState(comments);
@@ -182,9 +183,13 @@ const PostCard = ({
   
 
   // When the user clicks the comment icon, open the ReplyModal
-  const handleCommentIconClick = () => {
-    setIsReplyModalOpen(true);
-  };
+   const handleCommentIconClick = () => {
+      // if parent passed its own handler, call that instead of opening a modal
+      if (onCommentIconClick) {
+        return onCommentIconClick();
+      }
+      setIsReplyModalOpen(true);
+    };
 
   useEffect(() => {
     setCommentCount(comments);
@@ -258,7 +263,17 @@ const PostCard = ({
       </div>
 
       <div className="hover:no-underline hover:text-current">
-        <h2 className="text-xl font-semibold mb-2">{title}</h2>
+        <h2 className="text-xl font-semibold mb-2">
+          <Link
+            to={`/tech/post/${postId}`}
+            onClick={(e) => {
+              e.stopPropagation();
+            }}
+            className="hover:underline"
+          >
+            {title}
+          </Link>
+        </h2>
         <p className="mt-2">Type: {type}</p>
         <Linkify
           componentDecorator={(href, text, key) => (

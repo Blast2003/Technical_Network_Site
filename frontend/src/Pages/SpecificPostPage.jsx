@@ -1,7 +1,7 @@
+// SpecificPostPage.jsx (updated)
 import React, { useEffect, useState } from "react";
 import PostCard from "../Components/feed/PostCard";
-import AppPromotion from "../Components/section/AppPromotion";
-import RepliesSection from "../Components/section/RepliesSection";
+
 import { useParams } from "react-router-dom";
 import { toast } from "react-toastify";
 import { formatDistanceToNow } from "date-fns";
@@ -9,24 +9,50 @@ import LeftNav from "../Components/LeftNav";
 import TrendingTopics from "../Components/TrendingTopics";
 import SuggestedFollows from "../Components/recommendation/SuggestedFollows";
 import loader from "../assets/loader.svg";
+import { useRecoilValue } from "recoil";
+import userAtom from "../Atoms/userAtom";
 
 const SpecificPostPage = () => {
-  const { username, id } = useParams();
+  const currentUser = useRecoilValue(userAtom);
+  const { id } = useParams();
   const [post, setPost] = useState(null);
   const [loading, setLoading] = useState(true);
   const [ownerPost, setOwnerPost] = useState(null);
 
   useEffect(() => {
-    const fetchPost = async () => {
+    const fetchById = async () => {
+      setLoading(true);
       setPost(null);
+      setOwnerPost(null);
+
       try {
-        const response = await fetch(`/api/post/${id}`);
-        const data = await response.json();
-        if (data.error) {
-          toast.error(data.error);
+        // gọi API theo id
+        const res = await fetch(`/api/post/${id}`);
+        const data = await res.json();
+        if (!res.ok) {
+          toast.error(data.error || "Failed to fetch post");
+          setLoading(false);
           return;
         }
         setPost(data);
+
+        // fetch owner profile
+        const username = data.UserName;
+        if (!username) {
+          toast.error("Post does not have an owner");
+          setLoading(false);
+          return;
+        }
+
+        const ownerRes = await fetch(`/api/user/profile/${encodeURIComponent(username)}`);
+        if (!ownerRes.ok) {
+          const err = await ownerRes.json();
+          toast.error(err.error || "Failed to fetch user profile");
+          setLoading(false);
+          return;
+        }
+        const ownerData = await ownerRes.json();
+        setOwnerPost(ownerData);
       } catch (err) {
         toast.error(err.message);
       } finally {
@@ -34,47 +60,42 @@ const SpecificPostPage = () => {
       }
     };
 
-    const fetchOwnerPost = async () => {
-      try {
-        const response = await fetch(`/api/user/profile/${username}`);
-        if (!response.ok) {
-          throw new Error("Failed to fetch user profile");
-        }
-        const data = await response.json();
-        setOwnerPost(data);
-      } catch (err) {
-        toast.error(err.message);
-      }
-    };
+    if (id) fetchById();
+  }, [id]);
 
-    fetchPost();
-    fetchOwnerPost();
-  }, [id, username]);
+  const handleLikeUpdate = (postId, newLikeCount, isLiked) => {
+  setPost(prev => {
+    if (!prev || prev.id !== postId) return prev;
+
+    const updatedLikedUserIds = isLiked
+      ? Array.from(new Set([...(prev.likedByUserIds || []), currentUser.id]))
+      : (prev.likedByUserIds || []).filter(id => id !== currentUser.id);
+
+    return {
+      ...prev,
+      TotalLikeNumber: newLikeCount,
+      LikedUserIds: updatedLikedUserIds,
+    };
+  });
+};
 
   // Wait until both post and ownerPost are loaded
-  if (loading || ownerPost === null) {
+  if (loading) {
     return (
       <div className="flex flex-col items-center justify-center h-screen">
         <img width="100" src={loader} alt="loader" />
-        <p>Redirecting...</p>
+        <p>Loading...</p>
       </div>
     );
   }
 
   // If no post or the owner's account is frozen, render "Post Not Found"
-  if (!post || ownerPost.isFrozen) {
+  if (!post || ownerPost?.isFrozen) {
     return (
       <h2 className="text-2xl font-bold mt-10 text-center">Post Not Found</h2>
     );
   }
 
-  const handleCommentUpdate = (postId, newCommentCount) => {
-    setPost((post) =>
-        post.id === postId
-          ? { ...post, TotalRepliesNumber: newCommentCount }
-          : post
-      );
-  };
 
   return (
     <div className="bg-gray-200 min-h-screen">
@@ -88,30 +109,20 @@ const SpecificPostPage = () => {
 
         <div className="w-full md:w-[600px] lg:w-[700px] p-4">
           <PostCard
-            postId={post?.id ?? id}
+            postId={post?.id}
             profilePic={post?.profilePic || "https://placehold.co/40x40"}
-            author={post?.UserName || username}
-            time={formatDistanceToNow(new Date(post.createdAt), {
-              addSuffix: true,
-            })}
+            author={post?.UserName}
+            time={formatDistanceToNow(new Date(post.createdAt), { addSuffix: true })}
+            title={post?.title}
             content={post?.text}
             imageUrl={post?.img}
             type={post?.type}
             hashtag={post?.hashtag}
-            LikedUserIds={post?.LikedUserIds}
+            LikedUserByIds={post?.LikedUserIds} // match PostCard prop name
             likes={post?.LikeCount || post?.TotalLikeNumber || 0}
             comments={post?.TotalRepliesNumber || 0}
-            onLikeUpdate={(postId, newLikeCount) =>
-              setPost((prevPost) =>
-                prevPost?.id === postId
-                  ? { ...prevPost, likes: newLikeCount }
-                  : prevPost
-              )
-            }
-            onCommentUpdate={handleCommentUpdate}
+            onLikeUpdate={handleLikeUpdate}
           />
-          <AppPromotion />
-          <RepliesSection postId={id} onCommentUpdate={handleCommentUpdate} />
         </div>
 
         {/* RIGHT SIDEBAR */}

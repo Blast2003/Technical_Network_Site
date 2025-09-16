@@ -4,12 +4,16 @@ import { fileURLToPath } from 'url';
 import ollama from 'ollama';
 // import { sequelize } from '../config/database.js';
 
-import { db, generatePopularityQuery, generateTopicQuery, topicChain } from "../lib/langchain.js";
+import { db, generatePopularityQuery, generateSummary, generateTopicQuery } from "../lib/langchain.js";
 import analyzeInputTaxonomy from '../gemini/DefineUserInputFromTaxonomy.js';
 
 // Create __dirname equivalent for ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+import { Post} from '../models/postModel.js';
+import {sequelize} from "../config/database.js";
+import { Op } from "sequelize";
 
 // const taxonomyKeywords = {
 //   'Core Infrastructure & Operations': ['infrastructure', 'operations', 'servers', 'networking', 'storage', 'virtualization', 'cloud infrastructure', 'system administration'],
@@ -60,12 +64,14 @@ export async function startConversation(id) {
 function isPopularityQuery(input) {
   const popKeywords   = /\b(?:popular|famous|favorite|trending|hot|best|most liked|most commented)\b/i;
   const rankPattern   = /\b(?:top|highest)\s+\d+/i;
-  const topicBlacklist = /\btopics?\b/i;     // matches “topic” or “topics”
+  const topicBlacklist = /\btopics?\b/i;  
+  const postBlacklist = /\bposts?\b/i;  
 
   const hasPop       = popKeywords.test(input) || rankPattern.test(input);
   const hasTopicWord = topicBlacklist.test(input);
+  const hasPostWord = postBlacklist.test(input);
 
-  return hasPop && !hasTopicWord;
+  return hasPop || hasTopicWord || hasPostWord;
 }
 
 // New function to check for topic keywords
@@ -138,7 +144,7 @@ function formatRelativeTime(isoDateString) {
   return 'just now';
 }
 
-function renderPostsMarkdown(rows, top_k = 3) {
+function renderPostsMarkdown(rows, top_k = 3, host = process.env.APP_HOST || 'http://localhost:4500') {
   if (!rows?.length) return "We don't have any posts related to that topic.";
 
   const available   = rows.length;
@@ -152,14 +158,18 @@ function renderPostsMarkdown(rows, top_k = 3) {
   const postsMarkdown = limitedRows
     .map((r, index) => {
       const relTime = formatRelativeTime(r.createdAt);
+      const url = `${host.replace(/\/$/, '')}/tech/post/${r.id}`;
+
       return [
         `**${index + 1}. ${r.title}**  *(${relTime})*`,
         `${r.text}`,
-        `\n**Likes**: ${r.LikesNumber}, **Replies**: ${r.RepliesNumber}`,
-        ""
-      ].join("\n");
+        // URL label và link nằm trên cùng 1 hàng
+        `**URL**: <a href="${url}" class="post-link">${url}</a>`,
+        // Likes/Replies: vẫn dùng markdown bold cho label nhưng không có background
+        `**Likes**: ${r.LikesNumber}, **Replies**: ${r.RepliesNumber}`,
+      ].join("\n\n"); // 1 blank line giữa các block
     })
-    .join("\n");
+    .join("\n\n---\n\n"); // optional separator giữa posts
 
   return notice + postsMarkdown;
 }
@@ -291,8 +301,8 @@ export async function chatResponseFromQueries(threadId, userInput) {
   const dateClause = buildDateClause(userInput);
   const top_k = extractTopK(userInput, 3);
   const isPopQuery = isPopularityQuery(userInput);
-  const isTopicQuery = !isPopQuery && containsTopicKeywords(userInput);
-  const category = isPopQuery ? 'Type1' : (isTopicQuery ? 'Type2' : 'Type3');
+  const isTopicQuery = isPopQuery && containsTopicKeywords(userInput);
+  const category = isPopQuery && !isTopicQuery ? 'Type1' : (isPopQuery && isTopicQuery ? 'Type2' : 'Type3');
   let taxonomy = '';
   
   console.log("dateClause: ", dateClause);
@@ -344,15 +354,83 @@ export async function chatResponseFromQueries(threadId, userInput) {
   let sqlRaw;
   try {
     if (category === 'Type1') {
-      sqlRaw = await generatePopularityQuery(userInput, top_k, dateClause);
+      sqlRaw = `SELECT
+                  p.id,
+                  p.title,
+                  p.text,
+                  p.type,
+                  p.createdAt,
+                  COUNT(DISTINCT pl.user_id) AS LikesNumber,
+                  COUNT(DISTINCT pr.reply_id) AS RepliesNumber
+              FROM posts p
+              LEFT JOIN postlikes pl ON pl.post_id = p.id
+              LEFT JOIN postreplies pr ON pr.post_id = p.id
+              JOIN userposts up ON up.post_id = p.id
+              JOIN users u ON u.id = up.user_id
+              WHERE u.isFrozen = false ${dateClause}
+              GROUP BY
+                  p.id,
+                  p.title,
+                  p.text,
+                  p.type,
+                  p.mainField,
+                  p.createdAt
+              ORDER BY LikesNumber DESC, RepliesNumber DESC
+              LIMIT ${top_k};`
     } else if (category === 'Type2') {
       if (!taxonomy || taxonomy === '""') {
-        const answer = 'We do not provide that service!';
-        history.push({ role: 'assistant', content: answer });
-        return answer;
+        sqlRaw = `SELECT
+                    p.id,
+                    p.title,
+                    p.text,
+                    p.type,
+                    p.createdAt,
+                    COUNT(DISTINCT pl.user_id) AS LikesNumber,
+                    COUNT(DISTINCT pr.reply_id) AS RepliesNumber
+                FROM posts p
+                LEFT JOIN postlikes pl ON pl.post_id = p.id
+                LEFT JOIN postreplies pr ON pr.post_id = p.id
+                JOIN userposts up ON up.post_id = p.id
+                JOIN users u ON u.id = up.user_id
+                WHERE u.isFrozen = false ${dateClause}
+                GROUP BY
+                    p.id,
+                    p.title,
+                    p.text,
+                    p.type,
+                    p.mainField,
+                    p.createdAt
+                ORDER BY LikesNumber DESC, RepliesNumber DESC
+                LIMIT ${top_k};`
+      } else {
+        const escaped = taxonomy.replace(/%/g, '\\%');
+        sqlRaw = `
+        SELECT
+          p.id,
+          p.title,
+          p.text,
+          p.type,
+          p.mainField,
+          p.createdAt,
+          COUNT(DISTINCT pl.user_id) AS LikesNumber,
+          COUNT(DISTINCT pr.reply_id) AS RepliesNumber
+        FROM posts p
+        LEFT JOIN postlikes pl ON pl.post_id = p.id
+        LEFT JOIN postreplies pr ON pr.post_id = p.id
+        JOIN userposts up ON up.post_id = p.id
+        JOIN users u ON u.id = up.user_id
+        WHERE u.isFrozen = false AND (p.mainField LIKE CONCAT('%', '${escaped}', '%') OR p.title LIKE CONCAT('%', '${escaped}', '%')) ${dateClause}
+        GROUP BY
+          p.id,
+          p.title,
+          p.text,
+          p.type,
+          p.mainField,
+          p.createdAt
+        ORDER BY LikesNumber DESC, RepliesNumber DESC
+        LIMIT ${top_k};
+        `.trim();
       }
-      const escaped = taxonomy.replace(/%/g, '\\%');
-      sqlRaw = await generateTopicQuery(userInput, taxonomy, escaped, top_k, dateClause);
     } else {
       const answer = 'We do not provide that service!';
       history.push({ role: 'assistant', content: answer });
@@ -362,6 +440,7 @@ export async function chatResponseFromQueries(threadId, userInput) {
     // Extract and clean SQL
     const sqlMatches = sqlRaw.match(/```sql([\s\S]*?)```/i);
     let cleanedSQL = sqlMatches ? sqlMatches[1].trim() : sqlRaw.trim();
+
 
     // 1) Ensure LIMIT
     if (!/limit\s+\d+/i.test(cleanedSQL)) {
@@ -386,48 +465,29 @@ export async function chatResponseFromQueries(threadId, userInput) {
       );
     }
 
-    // 4) PATCH: for topic queries, swap out the first mainField predicate
-    if (isTopicQuery) {
-      // (a) try your original CONCAT‐based double‐LIKE
-      const concatLikesRegex = /AND\s*\(\s*p\.mainField\s+LIKE\s+CONCAT\('%',\s*'[^']*',\s*'%'\)\s*OR\s*p\.mainField\s+LIKE\s+CONCAT\('%',\s*'[^']*',\s*'%'\)\s*\)/i;
-      if (concatLikesRegex.test(cleanedSQL)) {
-        const inner = cleanedSQL.match(/AND\s*\(\s*([^)]+)\)/i)[1];
-        const parts = inner.split(/\s+OR\s+/i).map(s => s.trim());
-        parts[0] = `p.mainField LIKE CONCAT('%', '${escaped_topic}', '%')`;
-        const newClause = `AND ( ${parts.join(' OR ')} )`;
-        cleanedSQL = cleanedSQL.replace(concatLikesRegex, newClause);
-        console.log("→ patched CONCAT‐LIKE clause:", newClause);
-      }
-      // (b) else try a simple LIKE '%…%' OR '%…%'
-      else {
-        const simpleLikesRegex = /AND\s*\(\s*p\.mainField\s+LIKE\s+'%[^']+%'\s+OR\s+p\.mainField\s+LIKE\s+'%[^']+%'\s*\)/i;
-        if (simpleLikesRegex.test(cleanedSQL)) {
-          const inner = cleanedSQL.match(/\(\s*(p\.mainField\s+LIKE\s+'%[^']+%'\s+OR\s+p\.mainField\s+LIKE\s+'%[^']+%')\s*\)/i)[1];
-          const parts = inner.split(/\s+OR\s+/i).map(s => s.trim());
-          parts[0] = `p.mainField LIKE '%${escaped_topic}%'`;
-          const newClause = `AND ( ${parts.join(' OR ')} )`;
-          cleanedSQL = cleanedSQL.replace(simpleLikesRegex, newClause);
-          console.log("→ patched simple LIKE clause:", newClause);
-        }
-        // (c) fallback: replace any standalone equality filter
-        else {
-          const equalityRegex = /AND\s+p\.mainField\s*=\s*'[^']*'/i;
-          if (equalityRegex.test(cleanedSQL)) {
-            const replacement = `AND p.mainField = '${escaped_topic}'`;
-            cleanedSQL = cleanedSQL.replace(equalityRegex, replacement);
-            console.log("→ patched equality filter:", replacement);
+
+    // 4: strip any extra predicates in the WHERE 
+    if(isPopQuery){
+      // Preserve any extra predicates (e.g. topic filters) and just ensure dateClause is present
+      const whereRegex = /(WHERE\s+u\.isFrozen\s*=\s*false)([\s\S]*?)(?=\bGROUP\s+BY\b)/i;
+      const match = cleanedSQL.match(whereRegex);
+      if (match) {
+        const prefix = match[1];             // "WHERE u.isFrozen = false"
+        const existingPredicates = match[2] || ''; // everything after that up to GROUP BY
+
+        let newPredicates = existingPredicates;
+
+        if (dateClause) {
+          // if there's already a createdAt/date predicate, try to replace it; otherwise append
+          if (/\bp\.createdAt\b/i.test(existingPredicates)) {
+            newPredicates = existingPredicates.replace(/\bAND\s+p\.createdAt[^\n]*/i, ` ${dateClause}`);
+          } else {
+            newPredicates = `${existingPredicates} ${dateClause}`;
           }
         }
-      }
-    }
 
-    // 5: strip any extra predicates in the WHERE 
-    if(isPopQuery){
-      const whereRegex = /WHERE\s+u\.isFrozen\s*=\s*false(?:\s+AND\s*[^G]+)?/i;
-      const forcedWhere = dateClause
-        ? `WHERE u.isFrozen = false ${dateClause}\n`
-        : `WHERE u.isFrozen = false\n`;
-      cleanedSQL = cleanedSQL.replace(whereRegex, forcedWhere);
+        cleanedSQL = cleanedSQL.replace(whereRegex, `${prefix}${newPredicates}`);
+      }
     }
 
     console.log("\ncleanedSQL:", cleanedSQL);
@@ -597,10 +657,157 @@ export function isSupportedQuery(userInput) {
     /\b(?:most|favourite|favorite|famous)\s+posts?\b/,
     /\bposts?\s+(?:about|on|for)\b/,
     /\blist\s+\d+\s+posts?\b/,
-    /\bposts?\b/
+    /\bposts?\b/,
+
+    // Topics
+    /\bpopular topics?\b/,
+    /\bfamous topics?\b/,
+    /\bfavorite topics?\b/,
+    /\btrending topics?\b/,
+    /\b(?:most|favourite|favorite|famous)\s+topics?\b/,
+    /\btopics?\s+(?:about|on|for)\b/,
+    /\blist\s+\d+\s+topics?\b/,
+    /\btopics?\b/,
   ];
 
   return patterns.some(rx => rx.test(q));
 }
+
+// Keyword lists
+const SUMMARY_KEYWORDS = [
+  'summarize', 'summary', 'overview', 'insight', 'recap', 'digest'
+];
+
+
+// Date/Time regex patterns
+const DATE_PATTERNS = [
+  { label: '24h', regex: /\b(24\s*hours?|one\s*day|1\s*day|24h|today)\b/i },
+  { label: '1w', regex: /\b(7\s*days?|one\s*week|1\s*week|past\s*week|last\s*week)\b/i },
+  { 
+    label: '1m', 
+    regex: /\b(30\s*days?|one\s*month|1\s*month|past\s*month|last\s*month)\b/i 
+  }
+];
+
+// Relative time extractor: "2 days ago", "3 months ago", etc.
+const RELATIVE_REGEX = /(?<value>\d+)\s*(?<unit>seconds?|minutes?|hours?|days?|weeks?|months?|years?)\s*ago/i;
+// Exact date formats: dd/mm/yyyy or dd-mm-yyyy
+const EXACT_DATE_REGEX = /\b(?<day>\d{1,2})[-\/](?<month>\d{1,2})[-\/](?<year>\d{2,4})\b/;
+
+/**
+ * Determine if input is a trending request and extract period label
+ */
+export function parseTrendingRequest(input) {
+  const lower = input.toLowerCase();
+  const hasSummary = SUMMARY_KEYWORDS.some(k => lower.includes(k));
+
+  if (!hasSummary) return null;
+
+  for (const { label, regex } of DATE_PATTERNS) {
+    if (regex.test(input)) return { periodLabel: label };
+  }
+
+  const relMatch = input.match(RELATIVE_REGEX);
+  if (relMatch?.groups) {
+    return { relative: { value: parseInt(relMatch.groups.value, 10), unit: relMatch.groups.unit } };
+  }
+
+  const exactMatch = input.match(EXACT_DATE_REGEX);
+  if (exactMatch?.groups) {
+    const { day, month, year } = exactMatch.groups;
+    return { exact: new Date(`${year}-${month}-${day}`) };
+  }
+
+  return { periodLabel: '24h' };
+}
+
+/**
+ * Compute the starting Date based on parsed period
+ */
+function computeSinceDate(parsed) {
+  let since = new Date();
+
+  if (parsed.periodLabel) {
+    switch (parsed.periodLabel) {
+      case '1w': since.setDate(since.getDate() - 7); break;
+      case '1m': since.setMonth(since.getMonth() - 1); break;
+      default: since.setDate(since.getDate() - 1);
+    }
+  } else if (parsed.relative) {
+    const { value, unit } = parsed.relative;
+    switch (unit.toLowerCase()) {
+      case 'second': case 'seconds': since.setSeconds(since.getSeconds() - value); break;
+      case 'minute': case 'minutes': since.setMinutes(since.getMinutes() - value); break;
+      case 'hour': case 'hours': since.setHours(since.getHours() - value); break;
+      case 'day': case 'days': since.setDate(since.getDate() - value); break;
+      case 'week': case 'weeks': since.setDate(since.getDate() - value * 7); break;
+      case 'month': case 'months': since.setMonth(since.getMonth() - value); break;
+      case 'year': case 'years': since.setFullYear(since.getFullYear() - value); break;
+    }
+  } else if (parsed.exact) {
+    since = parsed.exact;
+  }
+
+  return since;
+}
+
+/**
+ * Generate and return a markdown-formatted trending summary
+ */
+export async function chatTrendingSummary(threadId, userInput) {
+  const history = conversations[threadId];
+  if (!history) throw new Error("Invalid thread ID; call startConversation first");
+  
+  history.push({ role: 'user', content: userInput });
+  const parsed = parseTrendingRequest(userInput);
+  if (!parsed) return null;
+
+  const sinceDate = computeSinceDate(parsed);
+  const postCounts = await Post.findAll({
+    attributes: ['mainField', [sequelize.fn('COUNT', sequelize.col('mainField')), 'count']],
+    where: { createdAt: { [Op.gte]: sinceDate } },
+    group: ['mainField'], order: [[sequelize.literal('count'), 'DESC']], limit: 1
+  });
+
+  if (!postCounts.length) {
+    const latestPost = await Post.findOne({
+      order: [['createdAt', 'DESC']], // sắp xếp giảm dần theo thời gian tạo
+    });
+
+    if (!latestPost) return null;
+
+    const createdAt = latestPost.createdAt;
+
+    // Parse sang dd/mm/yyyy
+    const day = createdAt.getDate().toString().padStart(2, '0');
+    const month = (createdAt.getMonth() + 1).toString().padStart(2, '0'); // tháng bắt đầu từ 0
+    const year = createdAt.getFullYear();
+    const msg = `Cannot summarize: no posts found since ${day}/${month}/${year}.`;
+    history.push({ role: 'assistant', content: msg });
+    return msg;
+  }
+
+  const topTopic = postCounts[0].mainField;
+  const topicCount = postCounts[0].dataValues.count;
+
+  // const posts = await Post.findAll({
+  //   where: { mainField: topTopic, createdAt: { [Op.gte]: sinceDate } },
+  //   order: [['createdAt', 'DESC']], limit: 10
+  // });
+
+
+   // Build your summarization prompt exactly as before
+  const prompt =
+    `In 100-150 words, give me a comprehensive and insightful overview of the real-time technology trends and their future outlook. ` +
+    `Summarize the top trending topic "${topTopic}" (${topicCount} posts) from the past ${parsed.period}, focusing on its main themes, emerging directions, and potential impact. ` +
+    `Do NOT list individual posts. Conclude with a forward-looking statement about the significance or future trajectory of these trends.`;
+
+  // Call your new helper instead of the SQL chain
+  const summary = await generateSummary(prompt);
+
+  history.push({ role: 'assistant', content: summary });
+  return summary;
+}
+
 
 

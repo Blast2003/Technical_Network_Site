@@ -396,6 +396,10 @@ export const getUserProfile = async (req, res) => {
 };
 
 
+// controllers/userController.js
+import NodeCache from "node-cache";
+const aiCache = new NodeCache({ stdTTL: 60 * 60 * 24 }); // cache 24h
+
 export const getSuggestedUsers = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -431,23 +435,17 @@ export const getSuggestedUsers = async (req, res) => {
       ],
       attributes: {
         include: [
-          [
-            sequelize.literal(`(
-              SELECT COUNT(*)
-              FROM postlikes AS pl
-              WHERE pl.post_id = Post.id
-            )`),
-            'TotalLikeNumber'
-          ],
-          [
-            sequelize.literal(`(
-              SELECT COUNT(*)
-              FROM repliesuser AS ru
-              JOIN postreplies AS pr ON ru.reply_id = pr.reply_id
-              WHERE pr.post_id = Post.id
-            )`),
-            'TotalRepliesNumber'
-          ]
+          [sequelize.literal(`(
+            SELECT COUNT(*)
+            FROM postlikes AS pl
+            WHERE pl.post_id = Post.id
+          )`), 'TotalLikeNumber'],
+          [sequelize.literal(`(
+            SELECT COUNT(*)
+            FROM repliesuser AS ru
+            JOIN postreplies AS pr ON ru.reply_id = pr.reply_id
+            WHERE pr.post_id = Post.id
+          )`), 'TotalRepliesNumber']
         ]
       },
       order: [
@@ -456,8 +454,7 @@ export const getSuggestedUsers = async (req, res) => {
       ],
       limit: 5,
     });
-    
-    // Format posts as required
+
     const formattedPosts = userPosts.rows.map(p => {
       const postData = p.toJSON();
       return {
@@ -469,9 +466,35 @@ export const getSuggestedUsers = async (req, res) => {
       };
     });
 
-    // Analyze the user's trending field using AI
-    let PredictUserTrending = await AnalyzeUserTrendingForUserRecommendation(user, formattedPosts);
-    PredictUserTrending = PredictUserTrending.trim();
+    // Analyze the user's trending field using AI (safe)
+    const cacheKey = `predictTrending:${userId}`;
+    let PredictUserTrending = aiCache.get(cacheKey) || "";
+
+    const taxonomyList = [
+      "Core Infrastructure & Operations",
+      "Software & Application Development",
+      "Data & Intelligence",
+      "Security & Operations Management",
+      "Emerging Technologies"
+    ];
+
+    if (!PredictUserTrending) {
+      try {
+        const aiResult = await AnalyzeUserTrendingForUserRecommendation(user, formattedPosts, { timeoutMs: 3500 });
+        if (aiResult && typeof aiResult === 'string') {
+          const trimmed = aiResult.trim();
+          if (taxonomyList.includes(trimmed)) {
+            PredictUserTrending = trimmed;
+            aiCache.set(cacheKey, PredictUserTrending);
+          } else {
+            PredictUserTrending = "";
+          }
+        }
+      } catch (err) {
+        console.warn("AI call failed for suggested users; continuing without AI:", err.message);
+        PredictUserTrending = "";
+      }
+    }
 
     // Build suggestions from following relationships
     const followingIds = user.Following.map(f => f.id);
@@ -488,7 +511,7 @@ export const getSuggestedUsers = async (req, res) => {
         order: Sequelize.literal('RAND()'),
       });
     } else {
-      // Case 2: For each followed user, get their following (BFS-like search) {exclude frozen accounts}
+      // Case 2: BFS-like from followed user's following
       for (const followedUserId of followingIds) {
         const followedUser = await User.findByPk(followedUserId, {
           include: {
@@ -515,58 +538,51 @@ export const getSuggestedUsers = async (req, res) => {
       }
     }
 
-    // taxonomy list
-    const taxonomyList = [
-      "Core Infrastructure & Operations",
-      "Software & Application Development",
-      "Data & Intelligence",
-      "Security & Operations Management",
-      "Emerging Technologies"
-    ];
+    // If AI predicted a taxonomy, add recommended users (up to 2)
+    if (PredictUserTrending) {
+      try {
+        const recommendedUsers = await User.findAll({
+          where: {
+            isFrozen: false,
+          },
+          include: [{
+            model: Post,
+            as: 'OwnedPosts',
+            through: { attributes: [] },
+            attributes: [],
+            where: { mainField: PredictUserTrending }
+          }],
+          attributes: {
+            include: [
+              [sequelize.literal(`(
+                SELECT COUNT(*) 
+                FROM userposts AS up 
+                INNER JOIN posts AS p ON p.id = up.post_id 
+                WHERE up.user_id = User.id 
+                  AND p.mainField = '${PredictUserTrending}'
+              )`), 'postCount']
+            ]
+          },
+          group: ['User.id'],
+          order: [[sequelize.literal('postCount'), 'DESC']],
+        });
 
-    if (taxonomyList.includes(PredictUserTrending)) {
-      // Query for users with posts in the matching taxonomy field.
-      const recommendedUsers = await User.findAll({
-        where: {
-          isFrozen: false,
-        },
-        include: [{
-          model: Post,
-          as: 'OwnedPosts',
-          through: { attributes: [] },
-          attributes: [],
-          where: { mainField: PredictUserTrending }
-        }],
-        attributes: {
-          include: [
-            [sequelize.literal(`(
-              SELECT COUNT(*) 
-              FROM userposts AS up 
-              INNER JOIN posts AS p ON p.id = up.post_id 
-              WHERE up.user_id = User.id 
-                AND p.mainField = '${PredictUserTrending}'
-            )`), 'postCount']
-          ]
-        },
-        group: ['User.id'],
-        order: [[sequelize.literal('postCount'), 'DESC']],
-      });
+        const filteredRecommended = recommendedUsers.filter(u => {
+          return u.id !== userId &&
+                 !followingIds.includes(u.id) &&
+                 !suggestions.some(suggestion => suggestion.id === u.id);
+        });
 
-      // Filter out recommended users already in suggestions
-      const filteredRecommended = recommendedUsers.filter(u => {
-        return u.id !== userId &&
-               !followingIds.includes(u.id) &&
-               !suggestions.some(suggestion => suggestion.id === u.id);
-      });
-
-      // Only add up to 2 recommended users 
-      filteredRecommended.slice(0, 2).forEach(u => {
-        const userData = { ...u.toJSON(), recommend: true };
-        suggestions.push(userData);
-      });
+        filteredRecommended.slice(0, 2).forEach(u => {
+          const userData = { ...u.toJSON(), recommend: true };
+          suggestions.push(userData);
+        });
+      } catch (recErr) {
+        console.warn("Failed to fetch recommended users by taxonomy; continuing:", recErr.message);
+      }
     }
 
-    // Finally, if suggestions are still less than 10, fill with additional random users.
+    // Fill up to 10
     if (suggestions.length < 10) {
       const excludeIds = new Set([userId, ...followingIds, ...suggestions.map(s => s.id)]);
       const additionalUsers = await User.findAll({
@@ -580,19 +596,13 @@ export const getSuggestedUsers = async (req, res) => {
       suggestions = suggestions.concat(additionalUsers);
     }
 
-    // Separate recommended and non-recommended suggestions.
-
-    // const nonRecommended = suggestions.filter(s => !s.recommend); => check false
-    // const recommended = suggestions.filter(s => s.recommend);
-
-    const nonRecommended = suggestions.filter(s => s.recommend !== true); // check false  or not exits field
+    const nonRecommended = suggestions.filter(s => s.recommend !== true);
     const recommended = suggestions.filter(s => s.recommend === true);
 
-    // get slice of 5 users and 2 or less than 2 recommended user
     const totalCount = 5;
     const nonRecCount = Math.max(totalCount - recommended.length, 0);
     const finalSuggestions = nonRecommended.slice(0, nonRecCount).concat(recommended);
-    
+
     return res.status(200).json(finalSuggestions);
   } catch (error) {
     console.error("Error in Get Suggested Users", error.message);

@@ -7,7 +7,8 @@ import { Notification } from "../models/notificationModel.js";
 import { getRecipientSocketId, io } from "../socket/socket.js";
 import {analyzePost, Taxonomy} from "../gemini/useAI1.js";
 import sanitizeTaxonomy from "../utils/sanitizeTaxonomy.js"
-import { AnalyzeUserTrendingPostRecommendation } from "../gemini/useAI3.js";
+
+
 
 // Create a new post
 export const createPost = async (req, res) => {
@@ -486,309 +487,309 @@ export const replyToPost = async (req, res) => {
   
   
 // Get feed posts
+// controllers/PostController.js
+import NodeCache from "node-cache";
+import { AnalyzeUserTrendingForUserRecommendation } from "../gemini/useAI3.js"; 
+
+// chỉnh các import model theo project của bạn:
+
+const aiCache = new NodeCache({ stdTTL: 60 * 60 * 24 }); // cache 24h
+
 export const getFeedPosts = async (req, res) => {
-	try {
-	  const userId = req.user.id;
-	  const term = "Knowledge";
-  
-	  // Find the current user
-	  const user = await User.findByPk(userId);
-	  if (!user) {
-		return res.status(404).json({ error: "User not found" });
-	  }
-  
-	  // Retrieve posts owned by the user (for trending analysis)
-	  const userPosts = await Post.findAndCountAll({
-		include: [
-		  {
-			model: User,
-			as: "Owners",
-			attributes: ["id", "username", "profilePic"],
-			through: { attributes: [] },
-			where: { id: user.id },
-		  },
-		  {
-			model: User,
-			as: "LikedByUsers",
-			attributes: ["id"],
-			through: { attributes: [] },
-		  },
-		],
-		attributes: {
-		  include: [
-			[
-			  sequelize.literal(`(
-				SELECT COUNT(*)
-				FROM postlikes AS pl
-				WHERE pl.post_id = Post.id
-			  )`),
-			  'TotalLikeNumber'
-			],
-			[
-			  sequelize.literal(`(
-				SELECT COUNT(*)
-				FROM postreplies AS pr
-				WHERE pr.post_id = Post.id
-			  )`),
-			  'TotalRepliesNumber'
-			]
-		  ]
-		},
-		order: [
-		  ['createdAt', 'DESC'],
-		  ['id', 'DESC']
-		],
-		limit: 5,
-	  });
-  
-	  // Format posts for analysis
-	  const trueUserPosts = userPosts.rows.map(p => {
-		const postData = p.toJSON();
-		return {
-		  ...postData,
-		  postedBy: postData.Owners && postData.Owners[0] ? postData.Owners[0].id : null,
-		  UserName: postData.Owners && postData.Owners[0] ? postData.Owners[0].username : null,
-		  profilePic: postData.Owners && postData.Owners[0] ? postData.Owners[0].profilePic : null,
-		  likedByUserIds: postData.LikedByUsers ? postData.LikedByUsers.map(u => u.id) : [],
-		};
-	  });
-  
-	  // Analyze the user's trending field using AI
-	  let PredictUserTrending = await AnalyzeUserTrendingPostRecommendation(user, trueUserPosts);
-	  PredictUserTrending = PredictUserTrending.trim();
+  try {
+    const userId = req.user.id;
+    const term = "Knowledge";
 
-  
-	  // Retrieve the list of users the current user is following
-	  const following = await user.getFollowing({ attributes: ["id"] });
-	  const followingIds = following.map(f => f.id);
-  
-	  // Get pagination parameters from query; defaults: page 1, limit 5
-	  let { page, limit } = req.query;
-	  page = parseInt(page) || 1;
-	  limit = parseInt(limit) || 5;
-  
-	  // Define the taxonomy list
-	  const taxonomyList = [
-		"Core Infrastructure & Operations",
-		"Software & Application Development",
-		"Data & Intelligence",
-		"Security & Operations Management",
-		"Emerging Technologies"
-	  ];
-  
-	  // --- 1. Query Recommended Posts only on page 1 ---
-	  let recommendedPosts = [];
-	  if (page === 1 && taxonomyList.includes(PredictUserTrending)) {
-		const count = await Post.count({
-		  where: {
-			type: term,
-			mainField: PredictUserTrending,
-		  }
-		});
+    // Find the current user
+    const user = await User.findByPk(userId);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
 
-  
-		// Generate two random, distinct offsets
-		const offset1 = Math.floor(Math.random() * count);
-		let offset2 = Math.floor(Math.random() * count);
-		while (offset2 === offset1) {
-		  offset2 = Math.floor(Math.random() * count);
-		}
-  
-		// Define the common query options (without the limit)
-		const queryOptions = {
-		  where: {
-			type: term,
-			mainField: PredictUserTrending,
-		  },
-		  include: [
-			{
-			  model: User,
-			  as: "Owners",
-			  attributes: ["id", "username", "profilePic"],
-			  through: { attributes: [] },
-			  where: { id: { [Op.notIn]: [userId, ...followingIds] } },
-			},
-			{
-			  model: User,
-			  as: "LikedByUsers",
-			  attributes: ["id"],
-			  through: { attributes: [] },
-			},
-		  ],
-		  attributes: {
-			include: [
-			  [
-				sequelize.literal(`(
-				  SELECT COUNT(*) FROM postlikes AS pl WHERE pl.post_id = Post.id
-				)`),
-				"TotalLikeNumber"
-			  ],
-			  [
-				sequelize.literal(`(
-				  SELECT COUNT(*) FROM postreplies AS pr WHERE pr.post_id = Post.id
-				)`),
-				"TotalRepliesNumber"
-			  ]
-			]
-		  },
-		  order: [
-			[sequelize.literal('TotalLikeNumber + TotalRepliesNumber'), 'DESC']
-		  ],
-		  limit: 1, // one post per query
-		};
-  
-		// Fetch the posts using the random offsets
-		const post1 = await Post.findAll({ ...queryOptions, offset: offset1 });
-		const post2 = await Post.findAll({ ...queryOptions, offset: offset2 });
-  
-		// Combine to get 2 recommended posts
-		recommendedPosts = [post1[0], post2[0]];
-  
-		// Add more attributes in recommended posts and map LikedUserIds
-		recommendedPosts = recommendedPosts
-		  .filter(p => p !== undefined)
-		  .map(p => {
-			const data = p.toJSON();
-			return { 
-			  ...data, 
-			  recommend: true, 
-			  LikedUserIds: data.LikedByUsers ? data.LikedByUsers.map(u => u.id) : [] 
-			};
-		  });
-  
-		// For each recommended post, if the current user has liked it, try to replace it.
-		recommendedPosts = await Promise.all(
-		  recommendedPosts.map(async post => {
-			if (post.LikedUserIds.includes(userId)) {
-			  let replacement = null;
-			  let attempts = 0;
-			  while (!replacement && attempts < 5) {
-				const newOffset = Math.floor(Math.random() * count);
-				const replacementArr = await Post.findAll({ ...queryOptions, offset: newOffset });
-				if (replacementArr[0]) {
-				  const replacementData = replacementArr[0].toJSON();
-				  const replacementLikedUserIds = replacementData.LikedByUsers
-					? replacementData.LikedByUsers.map(u => u.id)
-					: [];
-				  if (!replacementLikedUserIds.includes(userId)) {
-					replacement = {
-					  ...replacementData,
-					  recommend: true,
-					  LikedUserIds: replacementLikedUserIds,
-					};
-				  }
-				}
-				attempts++;
-			  }
-			  return replacement;
-			} else {
-			  return post;
-			}
-		  })
-		);
-		// Filter out any null replacements.
-		recommendedPosts = recommendedPosts.filter(p => p !== null);
-  
-		// --- Ensure the two recommended posts are distinct ---
-		// Remove duplicates based on post id.
-		recommendedPosts = recommendedPosts.filter((post, index, self) =>
-		  self.findIndex(p => p.id === post.id) === index
-		);
-  
-		// If we still don't have 2 distinct recommended posts, try to fetch additional ones.
-		let extraAttempts = 0;
-		while (recommendedPosts.length < 2 && extraAttempts < 5) {
-		  const newOffset = Math.floor(Math.random() * count);
-		  const newArr = await Post.findAll({ ...queryOptions, offset: newOffset });
-		  if (newArr[0]) {
-			const newData = newArr[0].toJSON();
-			const newLikedUserIds = newData.LikedByUsers ? newData.LikedByUsers.map(u => u.id) : [];
-			if (!newLikedUserIds.includes(userId) && !recommendedPosts.some(p => p.id === newData.id)) {
-			  recommendedPosts.push({
-				...newData,
-				recommend: true,
-				LikedUserIds: newLikedUserIds,
-			  });
-			}
-		  }
-		  extraAttempts++;
-		}
-	  }
-  
-	  const feedPosts = await Post.findAndCountAll({
-		where: {
-		  type: term,
-		},
-		include: [
-		  {
-			model: User,
-			as: "Owners",
-			attributes: ["id", "username", "profilePic"],
-			through: { attributes: [] },
-			where: { id: { [Op.in]: followingIds } },
-		  },
-		  {
-			model: User,
-			as: "LikedByUsers",
-			attributes: ["id"],
-			through: { attributes: [] },
-		  },
-		],
-		order: [
-		  ["createdAt", "DESC"],
-		  ["id", "DESC"]
-		],
-		attributes: {
-		  include: [
-			[
-			  sequelize.literal(`(SELECT COUNT(*) FROM postlikes WHERE postlikes.post_id = Post.id)`),
-			  "TotalLikeNumber"
-			],
-			[
-			  sequelize.literal(`(SELECT COUNT(*) FROM postreplies WHERE postreplies.post_id = Post.id)`),
-			  "TotalRepliesNumber"
-			],
-		  ],
-		},
-		offset: (page - 1) * limit,
-		limit: limit,
-		distinct: true,
-	  });
-  
-	  const totalFeedCount = Array.isArray(feedPosts.count)
-		? feedPosts.count.length
-		: feedPosts.count;
-  
-	  const formattedFeedPosts = feedPosts.rows.map(p => {
-		const postData = p.toJSON();
-		return {
-		  ...postData,
-		  postedBy: postData.Owners && postData.Owners[0] ? postData.Owners[0].id : null,
-		  UserName: postData.Owners && postData.Owners[0] ? postData.Owners[0].username : null,
-		  profilePic: postData.Owners && postData.Owners[0] ? postData.Owners[0].profilePic : null,
-		  LikedUserIds: postData.LikedByUsers ? postData.LikedByUsers.map(u => u.id) : [],
-		};
-	  });
-  
-	  // Append recommended posts to the start of feed posts
-	  const combinedPosts = [...recommendedPosts, ...formattedFeedPosts];
-  
-	  // Calculate total pages and total posts (including recommended ones)
-	  const totalPages = Math.ceil(totalFeedCount / limit);
-	  const totalPosts = totalFeedCount + recommendedPosts.length;
-  
-	  return res.status(200).json({
-		totalPosts,
-		totalPages,
-		currentPage: page,
-		posts: combinedPosts,
-	  });
-	} catch (error) {
-	  console.error("Error in getFeedPosts", error.message);
-	  return res.status(500).json({ error: error.message });
-	}
+    // Retrieve user's recent posts for AI analysis
+    const userPosts = await Post.findAndCountAll({
+      include: [
+        {
+          model: User,
+          as: "Owners",
+          attributes: ["id", "username", "profilePic"],
+          through: { attributes: [] },
+          where: { id: user.id },
+        },
+        {
+          model: User,
+          as: "LikedByUsers",
+          attributes: ["id"],
+          through: { attributes: [] },
+        },
+      ],
+      attributes: {
+        include: [
+          [sequelize.literal(`(
+            SELECT COUNT(*)
+            FROM postlikes AS pl
+            WHERE pl.post_id = Post.id
+          )`), 'TotalLikeNumber'],
+          [sequelize.literal(`(
+            SELECT COUNT(*)
+            FROM postreplies AS pr
+            WHERE pr.post_id = Post.id
+          )`), 'TotalRepliesNumber']
+        ]
+      },
+      order: [['createdAt', 'DESC'], ['id', 'DESC']],
+      limit: 5,
+    });
+
+    const trueUserPosts = userPosts.rows.map(p => {
+      const postData = p.toJSON();
+      return {
+        ...postData,
+        postedBy: postData.Owners && postData.Owners[0] ? postData.Owners[0].id : null,
+        UserName: postData.Owners && postData.Owners[0] ? postData.Owners[0].username : null,
+        profilePic: postData.Owners && postData.Owners[0] ? postData.Owners[0].profilePic : null,
+        likedByUserIds: postData.LikedByUsers ? postData.LikedByUsers.map(u => u.id) : [],
+      };
+    });
+
+    // taxonomy list
+    const taxonomyList = [
+      "Core Infrastructure & Operations",
+      "Software & Application Development",
+      "Data & Intelligence",
+      "Security & Operations Management",
+      "Emerging Technologies"
+    ];
+
+    // Try to get cached prediction first
+    const cacheKey = `predictTrending:${userId}`;
+    let PredictUserTrending = aiCache.get(cacheKey) || "";
+
+    if (!PredictUserTrending) {
+      try {
+        const aiResult = await AnalyzeUserTrendingForUserRecommendation(user, trueUserPosts, { timeoutMs: 3500 });
+        if (aiResult && typeof aiResult === "string") {
+          const trimmed = aiResult.trim();
+          if (taxonomyList.includes(trimmed)) {
+            PredictUserTrending = trimmed;
+            aiCache.set(cacheKey, PredictUserTrending); // cache result
+          } else {
+            PredictUserTrending = ""; // invalid answer
+          }
+        }
+      } catch (aiErr) {
+        console.warn("AI prediction failed — continuing without recommended posts:", aiErr.message);
+        PredictUserTrending = "";
+      }
+    }
+
+    // Retrieve the list of users the current user is following
+    const following = await user.getFollowing({ attributes: ["id"] });
+    const followingIds = following.map(f => f.id);
+
+    // Pagination
+    let { page, limit } = req.query;
+    page = parseInt(page) || 1;
+    limit = parseInt(limit) || 5;
+
+    // --- 1. Query Recommended Posts only on page 1 ---
+    let recommendedPosts = [];
+    if (page === 1 && PredictUserTrending) {
+      try {
+        const count = await Post.count({
+          where: {
+            type: term,
+            mainField: PredictUserTrending,
+          }
+        });
+
+        if (count > 0) {
+          // Generate two distinct offsets
+          const offset1 = Math.floor(Math.random() * count);
+          let offset2 = Math.floor(Math.random() * count);
+          while (offset2 === offset1 && count > 1) {
+            offset2 = Math.floor(Math.random() * count);
+          }
+
+          const queryOptions = {
+            where: {
+              type: term,
+              mainField: PredictUserTrending,
+            },
+            include: [
+              {
+                model: User,
+                as: "Owners",
+                attributes: ["id", "username", "profilePic"],
+                through: { attributes: [] },
+                where: { id: { [Op.notIn]: [userId, ...followingIds] } },
+              },
+              {
+                model: User,
+                as: "LikedByUsers",
+                attributes: ["id"],
+                through: { attributes: [] },
+              },
+            ],
+            attributes: {
+              include: [
+                [sequelize.literal(`(
+                  SELECT COUNT(*) FROM postlikes AS pl WHERE pl.post_id = Post.id
+                )`), "TotalLikeNumber"],
+                [sequelize.literal(`(
+                  SELECT COUNT(*) FROM postreplies AS pr WHERE pr.post_id = Post.id
+                )`), "TotalRepliesNumber"]
+              ]
+            },
+            order: [
+              [sequelize.literal('TotalLikeNumber + TotalRepliesNumber'), 'DESC']
+            ],
+            limit: 1,
+          };
+
+          const post1 = await Post.findAll({ ...queryOptions, offset: offset1 });
+          const post2 = await Post.findAll({ ...queryOptions, offset: offset2 });
+
+          recommendedPosts = [post1[0], post2[0]].filter(Boolean).map(p => {
+            const data = p.toJSON();
+            return {
+              ...data,
+              recommend: true,
+              LikedUserIds: data.LikedByUsers ? data.LikedByUsers.map(u => u.id) : []
+            };
+          });
+
+          // For each recommended post, if current user has liked it, try to replace it
+          recommendedPosts = await Promise.all(
+            recommendedPosts.map(async post => {
+              if (!post) return null;
+              if (post.LikedUserIds && post.LikedUserIds.includes(userId)) {
+                let replacement = null;
+                let attempts = 0;
+                while (!replacement && attempts < 5) {
+                  const newOffset = Math.floor(Math.random() * count);
+                  const replacementArr = await Post.findAll({ ...queryOptions, offset: newOffset });
+                  if (replacementArr[0]) {
+                    const replacementData = replacementArr[0].toJSON();
+                    const replacementLikedUserIds = replacementData.LikedByUsers
+                      ? replacementData.LikedByUsers.map(u => u.id)
+                      : [];
+                    if (!replacementLikedUserIds.includes(userId)) {
+                      replacement = {
+                        ...replacementData,
+                        recommend: true,
+                        LikedUserIds: replacementLikedUserIds,
+                      };
+                    }
+                  }
+                  attempts++;
+                }
+                return replacement; // might be null if no replacement found
+              } else {
+                return post;
+              }
+            })
+          );
+
+          // Filter out nulls and duplicates
+          recommendedPosts = recommendedPosts.filter(p => p !== null);
+          recommendedPosts = recommendedPosts.filter((post, index, self) =>
+            self.findIndex(p => p.id === post.id) === index
+          );
+
+          // If < 2 recommended posts, try to fill additional ones
+          let extraAttempts = 0;
+          while (recommendedPosts.length < 2 && extraAttempts < 5) {
+            const newOffset = Math.floor(Math.random() * count);
+            const newArr = await Post.findAll({ ...queryOptions, offset: newOffset });
+            if (newArr[0]) {
+              const newData = newArr[0].toJSON();
+              const newLikedUserIds = newData.LikedByUsers ? newData.LikedByUsers.map(u => u.id) : [];
+              if (!newLikedUserIds.includes(userId) && !recommendedPosts.some(p => p.id === newData.id)) {
+                recommendedPosts.push({
+                  ...newData,
+                  recommend: true,
+                  LikedUserIds: newLikedUserIds,
+                });
+              }
+            }
+            extraAttempts++;
+          }
+        }
+      } catch (recErr) {
+        console.warn("Failed retrieving recommended posts, skipping recommendations:", recErr.message);
+        recommendedPosts = [];
+      }
+    }
+
+    // --- 2. Always retrieve feed posts from followed users ---
+    const feedPosts = await Post.findAndCountAll({
+      where: {
+        type: term,
+      },
+      include: [
+        {
+          model: User,
+          as: "Owners",
+          attributes: ["id", "username", "profilePic"],
+          through: { attributes: [] },
+          where: { id: { [Op.in]: followingIds } },
+        },
+        {
+          model: User,
+          as: "LikedByUsers",
+          attributes: ["id"],
+          through: { attributes: [] },
+        },
+      ],
+      order: [
+        ["createdAt", "DESC"],
+        ["id", "DESC"]
+      ],
+      attributes: {
+        include: [
+          [sequelize.literal(`(SELECT COUNT(*) FROM postlikes WHERE postlikes.post_id = Post.id)`), "TotalLikeNumber"],
+          [sequelize.literal(`(SELECT COUNT(*) FROM postreplies WHERE postreplies.post_id = Post.id)`), "TotalRepliesNumber"],
+        ],
+      },
+      offset: (page - 1) * limit,
+      limit: limit,
+      distinct: true,
+    });
+
+    const totalFeedCount = Array.isArray(feedPosts.count) ? feedPosts.count.length : feedPosts.count;
+
+    const formattedFeedPosts = feedPosts.rows.map(p => {
+      const postData = p.toJSON();
+      return {
+        ...postData,
+        postedBy: postData.Owners && postData.Owners[0] ? postData.Owners[0].id : null,
+        UserName: postData.Owners && postData.Owners[0] ? postData.Owners[0].username : null,
+        profilePic: postData.Owners && postData.Owners[0] ? postData.Owners[0].profilePic : null,
+        LikedUserIds: postData.LikedByUsers ? postData.LikedByUsers.map(u => u.id) : [],
+      };
+    });
+
+    // Append recommended posts to start
+    const combinedPosts = [...recommendedPosts, ...formattedFeedPosts];
+
+    // Calculate totals
+    const totalPages = Math.ceil(totalFeedCount / limit);
+    const totalPosts = totalFeedCount + recommendedPosts.length;
+
+    return res.status(200).json({
+      totalPosts,
+      totalPages,
+      currentPage: page,
+      posts: combinedPosts,
+    });
+  } catch (error) {
+    console.error("Error in getFeedPosts", error.message);
+    return res.status(500).json({ error: error.message });
+  }
 };
-  
+
+
 
 // Get Recruitment posts
 export const getRecruitmentPosts = async (req, res) => {
