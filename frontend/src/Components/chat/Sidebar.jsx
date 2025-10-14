@@ -200,7 +200,7 @@ const Sidebar = ({ conversations, setSelectedChat, lastMessage, loading }) => {
                     >
                       <div className="relative flex items-center justify-center">
                         <img
-                          src={user.profilePic || "https://placehold.co/40x40"}
+                          src={user?.profilePic || "https://placehold.co/40x40"}
                           alt={`${user.name}'s profile`}
                           className="w-10 h-10 rounded-full mr-3"
                         />
@@ -226,7 +226,7 @@ const Sidebar = ({ conversations, setSelectedChat, lastMessage, loading }) => {
                       >
                         <div className="relative flex items-center justify-center">
                           <img
-                            src={user.profilePic || "https://placehold.co/40x40"}
+                            src={user?.profilePic || "https://placehold.co/40x40"}
                             alt={`${user.name}'s profile`}
                             className="w-10 h-10 rounded-full mr-3"
                           />
@@ -281,7 +281,7 @@ const Sidebar = ({ conversations, setSelectedChat, lastMessage, loading }) => {
               <div className="flex items-center space-x-4 flex-grow">
                 <div className="relative inline-block">
                   <img
-                    src={conversation?.otherProfilePic}
+                    src={conversation?.otherProfilePic || "https://placehold.co/40x40"}
                     alt={`${conversation?.otherUsername} profile`}
                     className="rounded-full w-10 h-10"
                   />
@@ -331,7 +331,7 @@ const Sidebar = ({ conversations, setSelectedChat, lastMessage, loading }) => {
 
               {/* Timestamp */}
               <p className="text-sm text-gray-500 whitespace-nowrap shrink-0 ml-2">
-                {formatDistanceToNow(new Date(conversation?.updatedLastMessage?.updatedAt), {
+                {formatDistanceToNow(new Date(conversation?.updatedLastMessage?.updatedAt || conversation?.createdTime), {
                   addSuffix: true,
                   locale: customLocale,
                 })}

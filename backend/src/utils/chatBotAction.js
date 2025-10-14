@@ -419,7 +419,7 @@ export async function chatResponseFromQueries(threadId, userInput) {
         LEFT JOIN postreplies pr ON pr.post_id = p.id
         JOIN userposts up ON up.post_id = p.id
         JOIN users u ON u.id = up.user_id
-        WHERE u.isFrozen = false AND (p.mainField LIKE CONCAT('%', '${escaped}', '%') OR p.title LIKE CONCAT('%', '${escaped}', '%')) ${dateClause}
+        WHERE u.isFrozen = false AND (p.title LIKE CONCAT('%', '${escaped}', '%') OR p.mainField LIKE CONCAT('%', '${escaped}', '%')) ${dateClause}
         GROUP BY
           p.id,
           p.title,
@@ -675,7 +675,7 @@ export function isSupportedQuery(userInput) {
 
 // Keyword lists
 const SUMMARY_KEYWORDS = [
-  'summarize', 'summary', 'overview', 'insight', 'recap', 'digest'
+  'summarize', 'summary', 'overview', 'insight', 'recap', 'digest', 'summarizes', 'sumarizes'
 ];
 
 

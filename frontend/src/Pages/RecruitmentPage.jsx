@@ -1,3 +1,4 @@
+// RecruitmentPage.jsx
 import React, { useEffect, useState } from "react";
 import PostInput from "../Components/feed/PostInput";
 import PostCard from "../Components/feed/PostCard";
@@ -29,19 +30,35 @@ const RecruitmentPage = () => {
         throw new Error('Error fetching posts');
       }
       const data = await response.json();
+
+      // Merge recommendedPosts for the first page (if any)
+      let merged = data.posts || [];
+      if (pageNum === 1 && Array.isArray(data.recommendedPosts) && data.recommendedPosts.length > 0) {
+        // We want recommended posts to appear before feed posts but must avoid duplicates by id
+        const map = new Map();
+        // add recommended first
+        data.recommendedPosts.forEach((p) => map.set(p.id, p));
+        // add feed posts after, but only if not already present
+        (data.posts || []).forEach((p) => {
+          if (!map.has(p.id)) map.set(p.id, p);
+        });
+        merged = Array.from(map.values());
+      }
+
       return {
-        items: data.posts || [],
-        // If we got exactly 5 posts, assume there may be more.
-        cursor: data.posts && data.posts.length === 5 ? pageNum + 1 : null
+        items: merged,
+        // Use feed-only heuristic for cursor: if server returned at least `limit` feed posts, assume there may be more.
+        // (server still returns recommendedPosts separately)
+        cursor: (data.posts && data.posts.length >= 5) ? pageNum + 1 : null
       };
     },
     getKey: (item) => item.id
   });
 
   // reset the post for the first time
-    useEffect(() => {
-      setPosts([]);
-    }, []);  
+  useEffect(() => {
+    setPosts([]);
+  }, [setPosts]);
 
   // When the loader element is in view, load more posts.
   useEffect(() => {
@@ -54,9 +71,7 @@ const RecruitmentPage = () => {
   useEffect(() => {
     setPosts(list.items);
     setLoading(list.loadingState === "loading");
-
   }, [list.items, setPosts, list.loadingState]);
-
 
   if (loading) {
     return (
@@ -78,7 +93,7 @@ const RecruitmentPage = () => {
           </div>
         </aside>
 
-        {/* MAIN FEED: takes up full width on small screens, center portion on larger */}
+        {/* MAIN FEED */}
         <main className="w-full md:w-[600px] lg:w-[700px] p-4">
           {/* Post Input */}
           <div className="bg-gray-200 rounded-lg shadow p-4">
@@ -100,11 +115,12 @@ const RecruitmentPage = () => {
                   <PostCard
                     postId={post.id}
                     profilePic={
-                      post.profilePic === ""
+                      post.profilePic === "" || !post.profilePic
                         ? "https://placehold.co/40x40"
                         : post.profilePic
                     }
-                    author={post.UserName}
+                    userId={post.postedBy}
+                    author={post.UserName || "Unknown"}
                     time={formatDistanceToNow(new Date(post.createdAt), {
                       addSuffix: true,
                     })}
@@ -113,15 +129,18 @@ const RecruitmentPage = () => {
                     imageUrl={post.img}
                     type={post?.type}
                     hashtag={post?.hashtag}
-                    sourceType = {post?.sourceType}
-                    LikedUserByIds={post?.LikedUserIds}
+                    sourceType={post?.sourceType}
+                    LikedUserByIds={post?.LikedUserIds || []}
                     likes={post?.TotalLikeNumber || 0}
                     comments={post?.TotalRepliesNumber || 0}
+                    recommend={post?.recommend || false}
+                    mainField ={post?.mainField}
                   />
                 </div>
               ))
             )}
           </div>
+
           {/* Loader for infinite scrolling */}
           {list.cursor !== null && (
             <div

@@ -63,21 +63,50 @@ const SpecificPostPage = () => {
     if (id) fetchById();
   }, [id]);
 
-  const handleLikeUpdate = (postId, newLikeCount, isLiked) => {
-  setPost(prev => {
-    if (!prev || prev.id !== postId) return prev;
+  const handleLikeUpdate = (postId, newLikeCount, isLiked, actorId) => {
+    setPost(prev => {
+      if (!prev || prev.id !== postId) return prev;
 
-    const updatedLikedUserIds = isLiked
-      ? Array.from(new Set([...(prev.likedByUserIds || []), currentUser.id]))
-      : (prev.likedByUserIds || []).filter(id => id !== currentUser.id);
+      // Get the current liked-array (support both naming variants), clone to avoid mutation
+      const prevLikedA = Array.isArray(prev.LikedUserIds)
+        ? [...prev.LikedUserIds]
+        : Array.isArray(prev.likedByUserIds)
+          ? [...prev.likedByUserIds]
+          : [];
 
-    return {
-      ...prev,
-      TotalLikeNumber: newLikeCount,
-      LikedUserIds: updatedLikedUserIds,
-    };
-  });
-};
+      // Decide whether we should update the local client's liked-user array:
+      // - If actorId is provided: only change the local array if actorId === currentUser.id
+      // - If actorId is not provided: assume this is a local action and modify for current user
+      const shouldModifyForCurrentUser = actorId ? actorId === currentUser?.id : true;
+
+      let updatedLikedA = prevLikedA;
+
+      if (shouldModifyForCurrentUser && currentUser?.id != null) {
+        if (isLiked) {
+          // add current user id (avoid duplicates)
+          if (!updatedLikedA.includes(currentUser.id)) {
+            updatedLikedA = [...updatedLikedA, currentUser.id];
+          }
+        } else {
+          // remove current user id
+          updatedLikedA = updatedLikedA.filter(id => id !== currentUser.id);
+        }
+      }
+      // Ensure uniqueness
+      updatedLikedA = Array.from(new Set(updatedLikedA));
+
+      return {
+        ...prev,
+        // update canonical count fields
+        TotalLikeNumber: newLikeCount,
+        LikeCount: newLikeCount,
+        // keep both naming variants in sync
+        LikedUserIds: updatedLikedA,
+        likedByUserIds: updatedLikedA,
+      };
+    });
+  };
+
 
   // Wait until both post and ownerPost are loaded
   if (loading) {
@@ -122,6 +151,7 @@ const SpecificPostPage = () => {
             likes={post?.LikeCount || post?.TotalLikeNumber || 0}
             comments={post?.TotalRepliesNumber || 0}
             onLikeUpdate={handleLikeUpdate}
+            mainField ={post?.mainField}
           />
         </div>
 

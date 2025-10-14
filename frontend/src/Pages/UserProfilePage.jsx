@@ -38,6 +38,8 @@ const UserProfilePage = () => {
   const [userPosts, setUserPosts] = useRecoilState(userPostAtom);
   const [loading, setLoading] = useState(false);
 
+  console.log("userPosts: ", userPosts)
+
   // Image preview
   const fileRef = useRef(null);
   const { handleImageChange, imgUrl, setImgUrl } = usePreviewImg();
@@ -238,6 +240,7 @@ const UserProfilePage = () => {
                   LikedUserByIds={post.likedByUserIds || []}
                   likes={post.TotalLikeNumber || 0}
                   comments={post.TotalRepliesNumber || 0}
+                  mainField ={post?.mainField}
                 />
               ))
             )}
@@ -356,7 +359,7 @@ const UserProfilePage = () => {
                 rows={4}
                 className="bg-gray-300"
                 placeholder="Post content goes here..."
-                maxLength={500}
+                maxLength={1000}
                 value={postContent}
                 onChange={(e) => {
                   setPostContent(e.target.value);

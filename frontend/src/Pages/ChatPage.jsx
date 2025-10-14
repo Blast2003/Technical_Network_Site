@@ -17,55 +17,30 @@ const ChatPage = () => {
   const { socket } = useSocket();
 
   useEffect(() => {
-    if (!socket) return;
+  if (!socket) return;
 
-    // Handler for new message events
-    const handleLastMessage = async (newMessage) => {
-      // Reset lastMessage, then update
-      setLastMessage(null);
-      // console.log("Last Message: ", newMessage);
-      setLastMessage(newMessage);
+  const handleLastMessage = async (newMessage) => {
+    // update last message and play sound when window not focused
+    setLastMessage(newMessage);
+    if (!document.hasFocus()) {
+      const sound = new Audio(messageSound);
+      sound.play();
+    }
 
-      // Play sound if the window is not focused
-      if (!document.hasFocus()) {
-        const sound = new Audio(messageSound);
-        sound.play();
-      }
-
+    // Single fetch -> set the conversations from server (server is source of truth)
+    try {
       const res = await fetch("/api/message/");
       const data = await res.json();
+      // Replace the conversations state with the server's list (avoid any local prepend logic)
       setConversations(data);
-      
-      // Check if the new message's conversationId exists in the current conversations
-      const conversationExists = conversations.some(
-        (conv) => conv.conversationId === newMessage.conversationId
-      );
+    } catch (error) {
+      console.error("Error fetching updated conversations", error);
+    }
+  };
 
-      // If it does not exist, call the API again to fetch all conversations
-      if (!conversationExists) {
-        try {
-          const res = await fetch("/api/message/");
-          const data = await res.json();
-          // Compare the new data length with previous conversations length
-          if (data.length > conversations.length) {
-            // Find the conversation whose conversationId matches the new message
-            const newConversation = data.find(
-              (conv) => conv.conversationId === newMessage.conversationId
-            );
-            if (newConversation) {
-              // Prepend the new conversation to the current conversations state
-              setConversations((prev) => [newConversation, ...prev]);
-            }
-          }
-        } catch (error) {
-          console.error("Error fetching updated conversations", error);
-        }
-      }
-    };
-
-    socket.on("newMessage", handleLastMessage);
-    return () => socket.off("newMessage", handleLastMessage);
-  }, [socket, conversations]);
+  socket.on("newMessage", handleLastMessage);
+  return () => socket.off("newMessage", handleLastMessage);
+}, [socket]);
 
   useEffect(() => {
     setConversations([]);

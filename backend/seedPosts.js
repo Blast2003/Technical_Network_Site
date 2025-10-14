@@ -28,12 +28,13 @@ import { faker } from '@faker-js/faker';
       const index = existingCount + offset + i + 1;
       const title = faker.hacker.phrase();
       const text = Array.from({ length: 2 }, () => faker.hacker.phrase()).join("");
-      const type = 'PerformanceTest';
+      const type = 'Knowledge';
       const hashtag = '#test';
       const mainField = faker.helpers.arrayElement([
         'Emerging Technologies',
         'Software & Application Development',
-        'Data & Intelligence',
+        'Data Engineering & Management',
+        'Artificial Intelligence & Analytics',
         'Security & Operations Management',
         'Core Infrastructure & Operations'
       ]);

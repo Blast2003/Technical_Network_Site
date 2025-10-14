@@ -1,6 +1,6 @@
 import express from "express";
 import { protectRoutes } from "../middleware/protectRoutes.js";
-import { UserLogin, UserSignup, UserLogout, FollowAndUnFollowUser, updateUser, getUserProfile, getSuggestedUsers, freezeAccount, getFollowingId, FilterFollowingUser, SearchUserToMakeConversation, SearchUsers, UserSigInWithGitHub, UserSigInWithGoogle} from '../controllers/userController.js';
+import { UserLogin, UserSignup, UserLogout, FollowAndUnFollowUser, updateUser, getUserProfile, getSuggestedUsers, freezeAccount, getFollowingId, FilterFollowingUser, SearchUserToMakeConversation, SearchUsers, UserSigInWithGitHub, UserSigInWithGoogle, getLikedUsersByIds} from '../controllers/userController.js';
 
 const userRouter = express.Router();
 
@@ -21,6 +21,7 @@ userRouter.get("/follow", protectRoutes, FilterFollowingUser)
 userRouter.get("/search/:Term", protectRoutes, SearchUserToMakeConversation)
 userRouter.get("/searchUsers/:Term", protectRoutes, SearchUsers)
 
+userRouter.post("/likedUsers", protectRoutes, getLikedUsersByIds);
 
 
 export default userRouter;

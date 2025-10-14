@@ -23,6 +23,7 @@ const HomePage = () => {
   const user = useRecoilValue(userAtom);
 
   console.log("posts: ", posts)
+  console.log("owner user: ", user)
 
   // Setup infinite scroll hooks:
   const { ref: loaderRef, inView } = useInView({ threshold: 0 });
@@ -147,6 +148,7 @@ const HomePage = () => {
                     likes={post?.TotalLikeNumber || 0}
                     comments={post?.TotalRepliesNumber || 0}
                     recommend={post?.recommend} 
+                    mainField ={post?.mainField}
                   />
                 </div>
               ))}

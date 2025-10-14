@@ -62,8 +62,6 @@ Read the script below:
 I have the user information in form of json (sometime the user is a new user and position or bio of them maybe is null or empty string):
 ${JSON.stringify(userInfo, null, 2)}
 
-I have 5 or fewer user-generated posts in the most recent time (each post in form of json object):
-${JSON.stringify(userPosts, null, 2)}
 
 Give me the suggestion about their interesting, their trending that is one of 6 Taxonomy of IT-Related Fields that i provided. (only give me the answer that is the name of one taxonomy)
 If the user information (in form of json) don't have or equal null and the user have not created any posts before (user-generated posts is empty array or null). (only give me the answer that is empty string "").

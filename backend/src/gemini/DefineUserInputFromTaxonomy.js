@@ -37,10 +37,11 @@ const safetySetting = [
  */
 async function analyzeInputTaxonomy(userInput) {
   const prompt = `
-You have these five IT-Related Field taxonomies:
+You have these six IT-Related Field taxonomies:
 - Core Infrastructure & Operations
 - Software & Application Development
-- Data & Intelligence
+- Data Engineering & Management
+- Artificial Intelligence & Analytics
 - Security & Operations Management
 - Emerging Technologies
 

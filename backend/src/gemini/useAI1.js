@@ -95,7 +95,8 @@ import { Variables } from "../config/variables.js";
     const prompting = `I have the Taxonomy of IT-Related Fields:
     Core Infrastructure & Operations
     Software & Application Development
-    Data & Intelligence
+    Data Engineering & Management
+    Artificial Intelligence & Analytics
     Security & Operations Management
     Emerging Technologies
 
@@ -120,7 +121,8 @@ I have the topic "${topic}", which is the Taxonomy of IT-Related Fields that the
     const prompting = `I have the Taxonomy of IT-Related Fields:
     Core Infrastructure & Operations
     Software & Application Development
-    Data & Intelligence
+    Data Engineering & Management
+    Artificial Intelligence & Analytics
     Security & Operations Management
     Emerging Technologies
 
@@ -134,7 +136,7 @@ I have the topic "${topic}", which is the Taxonomy of IT-Related Fields that the
     ${JSON.stringify(userPosts, null, 2)}
 
 
-    Give me the suggestion about their interesting, their trending that is one of 5 Taxonomy of IT-Related Fields that i provided. (only give me the answer that is the name of one taxonomy)
+    Give me the suggestion about their interesting, their trending that is one of 6 Taxonomy of IT-Related Fields that i provided. (only give me the answer that is the name of one taxonomy)
     If the user information (in form of json) don't have or equal null and the user have not created any posts before (user-generated posts is empty array or null). (only give me the answer that is empty string).`;
     
 

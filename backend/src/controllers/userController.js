@@ -473,7 +473,8 @@ export const getSuggestedUsers = async (req, res) => {
     const taxonomyList = [
       "Core Infrastructure & Operations",
       "Software & Application Development",
-      "Data & Intelligence",
+      "Data Engineering & Management",
+		  "Artificial Intelligence & Analytics",
       "Security & Operations Management",
       "Emerging Technologies"
     ];
@@ -782,6 +783,47 @@ export const SearchUsers = async (req, res) => {
     }
 };
 
+
+export const getLikedUsersByIds = async (req, res) => {
+  try {
+    const ids = req.body?.ids;
+    // 1-based page (consistent with your other endpoints)
+    const pageParam = parseInt(req.query.page, 10);
+    const page = Number.isFinite(pageParam) && pageParam >= 1 ? pageParam : 1;
+    const limit = 5;
+    const offset = (page - 1) * limit;
+
+    console.log("[getLikedUsersByIds] incoming", { idsLength: Array.isArray(ids) ? ids.length : 0, page, limit, offset });
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      console.log("[getLikedUsersByIds] missing ids");
+      return res.status(400).json({ error: "ids array is required in request body" });
+    }
+
+    // Single DB call to fetch matching users
+    const dbUsers = await User.findAll({
+      where: { id: { [Op.in]: ids } },
+      attributes: ["id", "name", "username", "profilePic", "bio", "position"],
+    });
+
+    const userMap = new Map();
+    dbUsers.forEach(u => userMap.set(Number(u.id), u));
+
+    // preserve the order of ids param, drop missing ones
+    const ordered = ids.map(id => userMap.get(Number(id))).filter(Boolean);
+
+    const total = ordered.length;
+    const paged = ordered.slice(offset, offset + limit);
+    const hasMore = offset + paged.length < total;
+
+    console.log("[getLikedUsersByIds] returning", { page, returned: paged.length, hasMore, total });
+
+    return res.status(200).json({ users: paged, hasMore, total });
+  } catch (error) {
+    console.error("[getLikedUsersByIds] error:", error);
+    return res.status(500).json({ error: error.message || "Server error" });
+  }
+};
 
 
 

@@ -156,6 +156,7 @@ export const Chat = async (req, res) => {
 
     const trendRequest = parseTrendingRequest(message);
     if (trendRequest) {
+      console.log("trendRequest: ", trendRequest);
       const summary = await chatTrendingSummary(thread_id, message);
       return res.status(200).json({ response: summary });
     }
