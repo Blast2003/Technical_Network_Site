@@ -1,7 +1,6 @@
 import { DataTypes, Model } from 'sequelize';
 import {sequelize} from "../config/database.js";
 
-
 // Users Table
 class User extends Model {}
 User.init({
@@ -14,6 +13,7 @@ User.init({
   bio: { type: DataTypes.TEXT },
   isFrozen: { type: DataTypes.BOOLEAN, defaultValue: false },
   position: { type: DataTypes.STRING, defaultValue: null },
+  is_global_admin: { type: DataTypes.BOOLEAN, defaultValue: false }, // Added global admin flag
 }, { sequelize, modelName: 'User', tableName: 'users', timestamps: true });
 
 // Followers (Self-referential Many-to-Many)
@@ -21,6 +21,5 @@ class Follower extends Model {}
 Follower.init({}, { sequelize, modelName: 'Follower', tableName: 'followers', timestamps: false });
 User.belongsToMany(User, { through: Follower, as: 'Followers', foreignKey: 'following_id' });
 User.belongsToMany(User, { through: Follower, as: 'Following', foreignKey: 'follower_id' });
-
 
 export {User, Follower};

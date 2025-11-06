@@ -93,17 +93,24 @@ export const sendMessage = async (req, res) => {
           user_id: senderId,
       });
 
-      const customNewMEssage = {...newMessage.toJSON(), sender: senderId, conversationId: conversation.id}
+      const customNewMessage = {
+        ...newMessage.toJSON(),
+        sender: senderId,
+        recipientId: parseInt(recipientId, 10),
+        conversationId: conversation.id,
+      };
 
       // Emit the new message to the recipient
       const recipientSocketId = getRecipientSocketId(recipientId);
       const senderSocketId = getRecipientSocketId(senderId);
-      if (recipientSocketId && senderSocketId) {
-          io.to(recipientSocketId).emit("newMessage", customNewMEssage);
-          io.to(senderSocketId).emit("newMessage", customNewMEssage);
+      if (recipientSocketId) {
+        io.to(recipientSocketId).emit("newMessage", customNewMessage);
+      }
+      if (senderSocketId) {
+        io.to(senderSocketId).emit("newMessage", customNewMessage);
       }
 
-      return res.status(201).json(customNewMEssage);
+      return res.status(201).json(customNewMessage);
   } catch (error) {
       console.log("Error in sendMessage", error.message);
       return res.status(500).json({
@@ -222,15 +229,35 @@ export const getConversations = async (req, res) => {
           attributes: [], // Exclude ConversationParticipant fields
         });
 
+        // Calculate unseen count: messages from other user that are not seen
+        const unseenCount = await Message.count({
+          include: [
+            {
+              model: MessagesConversation,
+              as: 'messagesConversations',
+              required: true,
+              where: { conversation_id: conversationId },
+            },
+            {
+              model: MessagesSender,
+              as: 'messagesSender',
+              required: true,
+              where: { user_id: { [Op.ne]: userId } }, // From other user
+            },
+          ],
+          where: { seen: false },
+        });
+
         return {
           lastMessage: lastMessage ? lastMessage.text : "",
-          updatedLastMessage: lastMessage ? lastMessage: null,
+          updatedLastMessage: lastMessage ? lastMessage : null,
           img: lastMessage ? lastMessage.img : '',
           conversationId: conversationId, // Get conversation ID directly
           createdTime: lastMessage ? lastMessage.createdAt : '',
           otherUsername: otherParticipant ? otherParticipant.User.username : '',
           otherUserId: otherParticipant ? otherParticipant.User.id : '',
           otherProfilePic: otherParticipant ? otherParticipant.User.profilePic : '',
+          unseenCount, // Add unseen count
         };
       })
     );
@@ -246,7 +273,4 @@ export const getConversations = async (req, res) => {
     return res.status(500).json({ error: `Internal Server Error in getConversations: ${error.message}` });
   }
 };
-  
-  
-  
-  
+ 

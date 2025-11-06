@@ -1,3 +1,4 @@
+// ChatArea.jsx (updated)
 import React, { useEffect, useRef, useState } from 'react';
 import seenIcon from "../../../public/seen.png";
 import { CloseCircleOutlined, CommentOutlined, FileImageOutlined, SendOutlined } from '@ant-design/icons';
@@ -33,15 +34,19 @@ const customLocale = {
   },
 };
 
-const ChatArea = ({ selectedChat }) => {
+const ChatArea = ({ selectedChat, setConversations }) => {
   const setMockConversation = useSetRecoilState(conversationAtom);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const { socket } = useSocket();
   const currentUser = useRecoilValue(userAtom);
-  const messageEndRef = useRef(null)
+  const messageEndRef = useRef(null);
 
-  // console.log("selectedChat", selectedChat);
+  // console.log("messages: ", messages)
+
+  // refs to avoid unnecessary refetches
+  const prevConversationIdRef = useRef(null);
+  const prevOtherUserIdRef = useRef(null);
 
   // handle image
   const fileRef = useRef(null);
@@ -49,43 +54,58 @@ const ChatArea = ({ selectedChat }) => {
 
   const handleCancelImage = () => {
     setImgUrl(null); // Clear the preview image
-    fileRef.current.value = ""; // Reset the file input value
+    if (fileRef.current) fileRef.current.value = ""; // Reset the file input value
   };
 
   useEffect(() => {
     if (!socket) return;
-  
+
     const handleNewMessage = (newMessage) => {
       // Only add the new message if it belongs to the selected conversation
       if (newMessage.conversationId !== selectedChat?.conversationId) return;
-      
-       // current user => don't add new message
-       if (newMessage.sender === currentUser.id) return;
 
-      // console.log("New Message: ", newMessage);
+      // current user => don't add new message
+      if (newMessage.sender === currentUser.id) return;
+
       setMessages((prevMessages) => [...prevMessages, newMessage]);
-  
+
       if (!document.hasFocus()) {
         const sound = new Audio(messageSound);
         sound.play();
       }
-  
     };
-  
+
     socket.on("newMessage", handleNewMessage);
     return () => socket.off("newMessage", handleNewMessage);
-  }, [ socket, selectedChat]);
+  }, [socket, selectedChat, currentUser.id]);
 
+  // Fetch messages when the effective conversation changes
   useEffect(() => {
-    setMessages([]);
-    if(selectedChat?.conversationId !== ""){
+    // If there's no selected chat, do nothing (or optionally clear messages)
+    if (!selectedChat) return;
+
+    const currentConversationId = selectedChat?.conversationId ?? "";
+    const currentOtherUserId = selectedChat?.otherUserId ?? "";
+
+    // If conversationId and otherUserId are unchanged, skip fetching to avoid flicker
+    if (
+      prevConversationIdRef.current === currentConversationId &&
+      prevOtherUserIdRef.current === currentOtherUserId
+    ) {
+      return;
+    }
+
+    // Update refs to reflect this selection
+    prevConversationIdRef.current = currentConversationId;
+    prevOtherUserIdRef.current = currentOtherUserId;
+
+    // Only fetch when we have a real conversationId (existing conversation)
+    if (currentConversationId !== "") {
       const fetchMessages = async () => {
-        if (!selectedChat?.otherUserId) return;
-        setMessages([]);
         try {
-          const res = await fetch(`/api/message/${selectedChat.otherUserId}`);
+          // DON'T clear messages here — keep current messages until the fresh payload arrives
+          const res = await fetch(`/api/message/${currentOtherUserId}`);
           const data = await res.json();
-          // console.log(data)
           if (data.error) {
             toast.error(data.error);
           } else {
@@ -96,23 +116,47 @@ const ChatArea = ({ selectedChat }) => {
         }
       };
       fetchMessages();
+    } else {
+      // mock conversation (no conversationId yet) — keep messages as-is (likely empty)
+      // If you prefer to clear messages for a brand new mock, uncomment next line:
+      // setMessages([]);
     }
-    
-  }, [selectedChat, selectedChat?.otherUserId]);
+  }, [selectedChat?.conversationId, selectedChat?.otherUserId, selectedChat]);
 
+  // scroll to bottom when messages update
   useEffect(() =>{
-    messageEndRef.current?.scrollIntoView( {behavior: "smooth"} )
-}, [messages])
+    messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   useEffect(() => {
     if (!socket || !messages.length) return;
 
-    const lastMessageIsFromOtherUser = messages[messages.length - 1].sender !== currentUser.id;
-    if (lastMessageIsFromOtherUser) {
+    const hasUnseenMessagesFromOther = messages.some(
+      (msg) => !msg.seen && msg.sender !== currentUser.id
+    );
+
+    if (hasUnseenMessagesFromOther) {
       socket.emit("markMessagesAsSeen", {
         conversationId: selectedChat?.conversationId,
         userId: selectedChat?.otherUserId,
       });
+
+      // Optimistically update local messages and conversations
+      setMessages((prevMessages) =>
+        prevMessages.map((msg) =>
+          !msg.seen && msg.sender !== currentUser.id
+            ? { ...msg, seen: true }
+            : msg
+        )
+      );
+
+      setConversations((prevConversations) =>
+        prevConversations.map((convo) =>
+          convo.conversationId === selectedChat?.conversationId
+            ? { ...convo, unseenCount: 0 }
+            : convo
+        )
+      );
     }
 
     const handleMessagesSeen = ({ conversationId }) => {
@@ -126,8 +170,8 @@ const ChatArea = ({ selectedChat }) => {
     };
 
     socket.on("messagesSeen", handleMessagesSeen);
-
-  }, [messages, socket, selectedChat?.conversationId, selectedChat?.otherUserId, currentUser.id]);
+    return () => socket.off("messagesSeen", handleMessagesSeen);
+  }, [messages, socket, selectedChat?.conversationId, selectedChat?.otherUserId, currentUser.id, setConversations]);
 
   const handleSendMessage = async () => {
     const message = newMessage.trim() || null;
@@ -144,11 +188,12 @@ const ChatArea = ({ selectedChat }) => {
         return;
       }
 
+      // Optimistically append the sent message locally
       setMessages((prev) => [...prev, data]);
       setNewMessage('');
       setImgUrl(null); // reset img
 
-      // Update Recoil state with the new conversation data
+      // Update Recoil state with the new conversation data (if this was a mock)
       if (selectedChat?.conversationId === "") {
         const newConversation = {
           lastMessage: data.text,
@@ -158,6 +203,7 @@ const ChatArea = ({ selectedChat }) => {
           otherUsername: selectedChat?.otherUsername,
           otherUserId: selectedChat?.otherUserId,
           otherProfilePic: selectedChat?.otherProfilePic,
+          unseenCount: 0, // Add unseenCount for new real conversation
         };
         setMockConversation(newConversation);
       }
@@ -170,72 +216,73 @@ const ChatArea = ({ selectedChat }) => {
   return (
     <>
       <div className="flex-1 flex flex-col h-full bg-blue-200">
-      {selectedChat ? (
-        <div className="flex-1 p-4 space-y-4 overflow-y-auto">
-          {messages?.map((message, index) => (
-            <div 
-              ref={messages.length - 1 === messages.indexOf(message) ? messageEndRef : null }
-              key={index} className={`flex ${message.sender === selectedChat?.otherUserId ? 'justify-start' : 'justify-end'}`}
-            >
-              <div className={`p-3 rounded-md shadow-md max-w-xs ${message.sender === selectedChat?.otherUserId ? 'bg-white ' : 'bg-gray-500 text-white'}`}>
-                <p>{message.text}</p>
-                {message.img !== "" && <img className='mt-3' src={message.img}/>}
-                <div className="flex justify-end items-center space-x-2 mt-1">
-                  <p className="text-xs text-gray-500">
-                    {formatDistanceToNow(new Date(message?.createdAt), { addSuffix: true, locale: customLocale }) && console.log(message?.createdAt)}
-                  </p>
-                  {message.seen && message.sender === currentUser.id && (
-                    <img src={seenIcon} className="w-5 h-5" alt="Seen Icon" />
-                  )}
+        {selectedChat ? (
+          <div className="flex-1 p-4 space-y-4 overflow-y-auto">
+            {messages?.map((message, index) => (
+              <div
+                ref={messages.length - 1 === messages.indexOf(message) ? messageEndRef : null}
+                key={index}
+                className={`flex ${message.sender === selectedChat?.otherUserId ? 'justify-start' : 'justify-end'}`}
+              >
+                <div className={`p-3 rounded-md shadow-md max-w-xs ${message.sender === selectedChat?.otherUserId ? 'bg-white ' : 'bg-gray-500 text-white'}`}>
+                  <p>{message.text}</p>
+                  {message.img !== "" && <img className='mt-3' src={message.img} alt="message attachment" />}
+                  <div className="flex justify-end items-center space-x-2 mt-1">
+                    <p className={`text-xs ${message.sender === selectedChat?.otherUserId ? 'text-gray-500' : 'text-gray-300'}`}>
+                      {formatDistanceToNow(new Date(message?.createdAt), { addSuffix: true, locale: customLocale })}
+                    </p>
+                    {message.seen && message.sender === currentUser.id && (
+                      <img src={seenIcon} className="w-5 h-5" alt="Seen Icon" />
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <CommentOutlined className="text-6xl text-gray-400 mb-4" />
-            <p className="text-xl text-gray-600">Select a conversation to start chatting</p>
+            ))}
           </div>
+        ) : (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <CommentOutlined className="text-6xl text-gray-400 mb-4" />
+              <p className="text-xl text-gray-600">Select a conversation to start chatting</p>
+            </div>
+          </div>
+        )}
+        <div className="chat-input-area">
+          {imgUrl && (
+            <div className="relative">
+              <img src={imgUrl} alt="Selected" className="max-h-40 rounded-md" />
+              <button
+                onClick={handleCancelImage}
+                className="absolute top-0 bg-gray-800 text-white rounded-full p-1 hover:bg-red-500 transition"
+                aria-label="Cancel Image"
+              >
+                <CloseCircleOutlined className="text-xl" />
+              </button>
+            </div>
+          )}
+          {selectedChat && (
+            <div className="bg-blue-300 p-4 border-t flex items-center space-x-4">
+              <FileImageOutlined onClick={() => fileRef.current.click()} className="text-2xl cursor-pointer" />
+              <input
+                type='file'
+                hidden
+                ref={fileRef}
+                onChange={handleImageChange}
+              />
+              <input
+                type="text"
+                placeholder="Type your message..."
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                className="flex-1 p-2 border rounded-md"
+              />
+              <button onClick={handleSendMessage} disabled={newMessage === "" && imgUrl === null} className="text-2xl">
+                <SendOutlined />
+              </button>
+            </div>
+          )}
         </div>
-      )}
-        <div className="chat-input-area"> 
-              {imgUrl && (
-              <div className="relative">
-                <img src={imgUrl} alt="Selected" className="max-h-40 rounded-md" />
-                <button
-                  onClick={handleCancelImage}
-                  className="absolute top-0 bg-gray-800 text-white rounded-full p-1 hover:bg-red-500 transition"
-                  aria-label="Cancel Image"
-                >
-                  <CloseCircleOutlined className="text-xl" />
-                </button>
-              </div>
-            )}
-            {selectedChat && (
-                <div className="bg-blue-300 p-4 border-t flex items-center space-x-4">
-                  <FileImageOutlined onClick={() => fileRef.current.click()} className="text-2xl cursor-pointer" />
-                  <input
-                    type='file'
-                    hidden
-                    ref={fileRef}
-                    onChange={handleImageChange}
-                  />
-                  <input
-                    type="text"
-                    placeholder="Type your message..."
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    className="flex-1 p-2 border rounded-md"
-                  />
-                  <button onClick={handleSendMessage} disabled={newMessage === ""} className="text-2xl">
-                    <SendOutlined />
-                  </button>
-                </div>
-            )}
-        </div>
-    </div>
+      </div>
     </>
   );
 };

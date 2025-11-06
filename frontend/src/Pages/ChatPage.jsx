@@ -1,3 +1,4 @@
+// ChatPage.jsx
 import React, { useEffect, useState } from 'react';
 import Sidebar from '../Components/chat/Sidebar';
 import ChatArea from '../Components/chat/ChatArea';
@@ -16,31 +17,47 @@ const ChatPage = () => {
   const [loading, setLoading] = useState(true);
   const { socket } = useSocket();
 
+  // console.log("conversations: ", conversations)
+  // Socket: when newMessage arrives update sidebar (source of truth) and also update selectedChat if needed
   useEffect(() => {
-  if (!socket) return;
+    if (!socket) return;
 
-  const handleLastMessage = async (newMessage) => {
-    // update last message and play sound when window not focused
-    setLastMessage(newMessage);
-    if (!document.hasFocus()) {
-      const sound = new Audio(messageSound);
-      sound.play();
-    }
+    const handleLastMessage = async (newMessage) => {
+      // update last message and play sound when window not focused
+      setLastMessage(newMessage);
+      if (!document.hasFocus()) {
+        const sound = new Audio(messageSound);
+        sound.play();
+      }
 
-    // Single fetch -> set the conversations from server (server is source of truth)
-    try {
-      const res = await fetch("/api/message/");
-      const data = await res.json();
-      // Replace the conversations state with the server's list (avoid any local prepend logic)
-      setConversations(data);
-    } catch (error) {
-      console.error("Error fetching updated conversations", error);
-    }
-  };
+      // Single fetch -> set the conversations from server (server is source of truth)
+      try {
+        const res = await fetch("/api/message/");
+        const data = await res.json();
+        // Replace the conversations state with the server's list (avoid any local prepend logic)
+        setConversations(data);
 
-  socket.on("newMessage", handleLastMessage);
-  return () => socket.off("newMessage", handleLastMessage);
-}, [socket]);
+        // If user currently has a selectedChat that matches the updated conversation,
+        // update selectedChat to the fresh object so ChatArea uses the real conversationId.
+        if (selectedChat) {
+          const match = data.find((c) =>
+            // if selectedChat is a mock (conversationId === ""), match by otherUserId
+            (selectedChat.conversationId === "" && c.otherUserId === selectedChat.otherUserId) ||
+            // else match by conversationId
+            (c.conversationId === selectedChat.conversationId)
+          );
+          if (match) {
+            setSelectedChat(match);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching updated conversations", error);
+      }
+    };
+
+    socket.on("newMessage", handleLastMessage);
+    return () => socket.off("newMessage", handleLastMessage);
+  }, [socket, selectedChat]); // include selectedChat so we can update it when conversations change
 
   useEffect(() => {
     setConversations([]);
@@ -67,8 +84,10 @@ const ChatPage = () => {
     fetchConversations();
   }, []);
 
+  // Handle mockConversation updates (from Search -> create mock -> send first message -> backend creates real conversation)
   useEffect(() => {
     if (Object.keys(mockConversation).length !== 0) {
+      // Update conversations list (replace existing mock or prepend)
       setConversations((prevConversations) => {
         // Check if the mockConversation already exists in the conversations array
         const existingConversationIndex = prevConversations.findIndex(
@@ -79,7 +98,6 @@ const ChatPage = () => {
         );
 
         if (existingConversationIndex !== -1) {
-          // Replace the existing conversation with the updated one
           const updatedConversations = [...prevConversations];
           updatedConversations[existingConversationIndex] = mockConversation;
           return updatedConversations;
@@ -89,10 +107,16 @@ const ChatPage = () => {
         }
       });
 
+      // If the currently selected chat refers to this same otherUser (e.g. the user is chatting in the mock),
+      // update selectedChat to the new object (mockConversation may already contain the real conversationId after the send).
+      if (selectedChat && selectedChat.otherUserId === mockConversation.otherUserId) {
+        setSelectedChat(mockConversation);
+      }
+
       // Reset the mockConversation state
       setMockConversation({});
     }
-  }, [mockConversation, setMockConversation]);
+  }, [mockConversation, setMockConversation, selectedChat, setSelectedChat]);
 
   if (loading) {
     return (
@@ -111,7 +135,7 @@ const ChatPage = () => {
         lastMessage={lastMessage}
         loading={loading}
       />
-      <ChatArea selectedChat={selectedChat} />
+      <ChatArea selectedChat={selectedChat} setConversations={setConversations} />
     </div>
   );
 };

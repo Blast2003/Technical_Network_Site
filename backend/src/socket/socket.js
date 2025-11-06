@@ -55,6 +55,17 @@ io.on("connection", (socket) => {
     if (postId) socket.leave(`post_${postId}`);
   });
 
+  // Forum real-time room
+  socket.on("joinForumRoom", ({ forumId }) => {
+    if (forumId) socket.join(`forum_${forumId}`);
+  });
+  socket.on("joinThreadRoom", ({ threadId }) => {
+    if (threadId) socket.join(`thread_${threadId}`);
+  });
+  socket.on("joinQuestionRoom", ({ questionId }) => {
+    if (questionId) socket.join(`question_${questionId}`);
+  });
+
   // read userId from query (your client should pass it)
   const userId = socket.handshake.query.userId;
 

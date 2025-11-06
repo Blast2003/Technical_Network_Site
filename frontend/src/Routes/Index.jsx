@@ -17,6 +17,10 @@ import Callback from '../Pages/CallBack'
 import NotFoundPage from '../Pages/NotFoundPage'
 import Career_Paths from '../Pages/Career_Paths'
 import SpecificPostPage from '../Pages/SpecificPostPage'
+import ForumsPage from "../Pages/ForumsPage"
+import ForumDetailPage from "../Pages/ForumDetailPage"
+import ThreadPage from "../Pages/ThreadPage"
+
 
 const Index = () => {
   const user = useRecoilValue(userAtom)
@@ -40,6 +44,12 @@ const Index = () => {
           <Route path="freeze" element={user ? <FreezeAccountPage/> : <Navigate to="/signin"/>}/>
           <Route path="chat" element={user ? <ChatPage/> : <Navigate to="/signin"/>}/>
           <Route path="career-paths" element={user ? <Career_Paths/> : <Navigate to="/signin"/>}/>
+
+          {/* Forum */}
+          <Route path="forums" element={user ? <ForumsPage/> : <Navigate to="/signin"/>} />
+          <Route path="forums/:forumId" element={user ? <ForumDetailPage/> : <Navigate to="/signin"/>} />
+          <Route path="forums/:forumId/threads/:threadId" element={user ? <ThreadPage/> : <Navigate to="/signin"/>} />
+
         </Route>
 
           <Route path="/" element={user ? <Navigate to="/tech"/> : <Navigate to="/signin"/>}/>
@@ -49,6 +59,7 @@ const Index = () => {
 
           {/* Catch all unmatched top-level routes */}
           <Route path="*" element={<NotFoundPage />} />
+
     
       </Routes>
     </>

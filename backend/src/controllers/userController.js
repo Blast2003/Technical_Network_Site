@@ -43,6 +43,7 @@ export const UserSignup = async (req, res) => {
                 bio: newUser.bio,
                 profilePic: newUser.profilePic,
                 position: newUser.position,
+                is_global_admin: newUser.is_global_admin,
                 token,
             });
         } else {
@@ -76,6 +77,7 @@ export const UserSigInWithGitHub = async (req, res) => {
                 bio: user.bio,
                 profilePic: user.profilePic,
                 position: user.position,
+                is_global_admin: user.is_global_admin,
                 token,
             });
         }
@@ -102,6 +104,7 @@ export const UserSigInWithGitHub = async (req, res) => {
                 bio: newUser.bio,
                 profilePic: newUser.profilePic,
                 position: newUser.position,
+                is_global_admin: user.is_global_admin,
                 token,
             });
         } else {
@@ -169,6 +172,7 @@ export const UserSigInWithGoogle = async (req, res) => {
         bio: user.bio,
         profilePic: user.profilePic,
         position: user.position,
+        is_global_admin: user.is_global_admin,
         token,
       });
     }
@@ -194,6 +198,7 @@ export const UserSigInWithGoogle = async (req, res) => {
         bio: newUser.bio,
         profilePic: newUser.profilePic,
         position: newUser.position,
+        is_global_admin: newUser.is_global_admin,
         token,
       });
     } else {
@@ -236,6 +241,7 @@ export const UserLogin = async (req, res) => {
             bio: user.bio,
             profilePic: user.profilePic,
             position: user.position,
+            is_global_admin: user.is_global_admin,
             token,
         });
     } catch (error) {

@@ -1,3 +1,4 @@
+// Sidebar.jsx
 import React, { useCallback, useState, useRef, useEffect } from "react";
 import { FaCircle } from "react-icons/fa";
 import { formatDistanceToNow } from "date-fns";
@@ -42,6 +43,8 @@ const Sidebar = ({ conversations, setSelectedChat, lastMessage, loading }) => {
   const [totalPages, setTotalPages] = useState(0);
   const setMockConversation = useSetRecoilState(conversationAtom);
   const searchContainerRef = useRef(null);
+
+  console.log("lastMessage: ", lastMessage)
 
   // Debounced function for initial search (page 1)
   const debouncedFetchSearchResults = useCallback(
@@ -108,6 +111,7 @@ const Sidebar = ({ conversations, setSelectedChat, lastMessage, loading }) => {
       otherUsername: user.name,
       otherUserId: user.id,
       otherProfilePic: user.profilePic || "https://placehold.co/40x40",
+      unseenCount: 0, // Add unseenCount for mock
     };
 
     // Check if the conversation already exists
@@ -299,43 +303,61 @@ const Sidebar = ({ conversations, setSelectedChat, lastMessage, loading }) => {
                   <p className="font-semibold truncate text-gray-800">
                     {conversation?.otherUsername}
                   </p>
-                  <p className="text-sm text-gray-600 line-clamp-1">
+                  <p className="text-sm text-gray-600 line-clamp-1 flex items-center">
                     {conversation.conversationId === "" ? (
                       "No message yet"
                     ) : lastMessage &&
-                      lastMessage?.conversationId ===
-                        conversation.conversationId ? (
-                      lastMessage?.text ? (
-                        lastMessage.text
-                      ) : (
-                        <FileImageOutlined />
-                      )
-                    ) : conversation?.lastMessage ? (
-                      conversation.lastMessage
+                      lastMessage?.conversationId === conversation.conversationId ? (
+                      <>
+                        {lastMessage.text && lastMessage.img ? (
+                          <>
+                            {lastMessage.text}
+                            <FileImageOutlined className="ml-1" />
+                          </>
+                        ) : lastMessage.text ? (
+                          lastMessage.text
+                        ) : lastMessage.img ? (
+                          "Sent a photo"
+                        ) : (
+                          <FileImageOutlined />
+                        )}
+                      </>
+                    ) : conversation?.lastMessage || conversation?.img ? (
+                      <>
+                        {conversation.lastMessage && conversation.img ? (
+                          <>
+                            {conversation.lastMessage}
+                            <FileImageOutlined className="ml-1" />
+                          </>
+                        ) : conversation.lastMessage ? (
+                          conversation.lastMessage
+                        ) : conversation.img ? (
+                          "Sent a photo"
+                        ) : (
+                          <FileImageOutlined />
+                        )}
+                      </>
                     ) : (
                       <FileImageOutlined />
                     )}
-                    {lastMessage &&
-                    lastMessage?.conversationId ===
-                      conversation.conversationId ? (
-                      lastMessage?.img && (
-                        <FileImageOutlined className="ml-1" />
-                      )
-                    ) : conversation?.lastMessage &&
-                      conversation?.img !== "" ? (
-                      <FileImageOutlined className="ml-1" />
-                    ) : null}
                   </p>
                 </div>
               </div>
 
-              {/* Timestamp */}
-              <p className="text-sm text-gray-500 whitespace-nowrap shrink-0 ml-2">
-                {formatDistanceToNow(new Date(conversation?.updatedLastMessage?.updatedAt || conversation?.createdTime), {
-                  addSuffix: true,
-                  locale: customLocale,
-                })}
-              </p>
+              {/* Timestamp and Unseen Count */}
+              <div className="flex flex-col items-end shrink-0 ml-2">
+                <p className="text-sm text-gray-500 whitespace-nowrap">
+                  {formatDistanceToNow(new Date(conversation?.updatedLastMessage?.updatedAt || conversation?.createdTime), {
+                    addSuffix: true,
+                    locale: customLocale,
+                  })}
+                </p>
+                {conversation.unseenCount > 0 && (
+                  <span className="mt-1 bg-red-500 text-white text-xs font-bold rounded-full px-2 py-1 animate-pulse">
+                    {conversation.unseenCount}
+                  </span>
+                )}
+              </div>
             </div>
           ))
         )}

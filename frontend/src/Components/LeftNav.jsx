@@ -7,6 +7,7 @@ import { MailOutlined, SettingOutlined   } from "@ant-design/icons";
 import { useRecoilValue } from "recoil";
 import userAtom from "../Atoms/userAtom";
 import { FaBriefcase } from "react-icons/fa6";
+import { FaLayerGroup } from "react-icons/fa";
 
 const LeftNav = () => {
   // Define the active and inactive text colors
@@ -118,6 +119,23 @@ const LeftNav = () => {
                 </div>
                 <span className="font-semibold cursor-pointer text-2xl ml-1 align-middle">
                   Career Paths
+                </span>
+              </NavLink>
+            </li>
+            <li className="p-2 rounded-lg transition-shadow hover:shadow-xl">
+              <NavLink
+                to="/tech/forums"
+                className={({ isActive }) =>
+                  `flex items-center text-2xl cursor-pointer transition transform hover:translate-x-1 ${
+                    isActive ? 'text-blue-600' : 'text-gray-600'
+                  }`
+                }
+              >
+                <div className="w-8 flex-shrink-0 flex justify-center">
+                  <FaLayerGroup className="text-2xl align-middle" />
+                </div>
+                <span className="font-semibold cursor-pointer text-2xl ml-1 align-middle">
+                  Forums
                 </span>
               </NavLink>
             </li>
