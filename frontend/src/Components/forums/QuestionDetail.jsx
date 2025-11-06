@@ -462,31 +462,32 @@ export default function QuestionDetail({ question, currentUser, forum, thread, o
   };
 
   // ---------- begin editing (initialize draft in parent store) ----------
-  const startEditing = (answer) => {
-    if (!answer) return;
-    // NEW: hide composer when starting an edit to avoid showing both composer + editor
-    if (showComposer) setShowComposer(false);
+const startEditing = (answer) => {
+  if (!answer) return;
+  // hide composer when starting an edit to avoid showing both composer + editor
+  if (showComposer) setShowComposer(false);
 
-    setEditingAnswerId(answer.id);
-    setEditingDrafts(prev => {
-      if (prev && prev[answer.id]) return prev; // don't overwrite existing draft
-      return {
-        ...prev,
-        [answer.id]: {
-          text: answer.content || "",
-          preview: answer.image_url || null,
-          file: null,
-        }
-      };
-    });
-    setTimeout(() => {
-      // scroll into view (best effort)
-      try {
-        const el = document.getElementById(`answer_node_${answer.id}`);
-        el && el.scrollIntoView({ behavior: "smooth", block: "center" });
-      } catch (err) { /* ignore */ }
-    }, 120);
-  };
+  setEditingAnswerId(answer.id);
+  setEditingDrafts(prev => {
+    if (prev && prev[answer.id]) return prev; // don't overwrite existing draft
+    return {
+      ...prev,
+      [answer.id]: {
+        text: answer.content || "",
+        preview: answer.image_url || null,
+        file: null,
+      }
+    };
+  });
+
+  // scroll into view (best effort) — keep this, helps bring editor into viewport
+  setTimeout(() => {
+    try {
+      const el = document.getElementById(`answer_node_${answer.id}`);
+      el && el.scrollIntoView({ behavior: "smooth", block: "center" });
+    } catch (err) { /* ignore */ }
+  }, 120);
+};
 
   // ---------- InlineReply ----------
   function InlineReply({ parentId, onCancel }) {
@@ -571,143 +572,206 @@ export default function QuestionDetail({ question, currentUser, forum, thread, o
   }
 
   // ---------- EditAnswer component (reads/writes to parent editingDrafts) ----------
-  function EditAnswer({ answer, onCancel }) {
-    const draft = editingDrafts[answer.id] || { text: answer.content || "", preview: answer.image_url || null, file: null };
-    const localFileRef = useRef(null);
+function EditAnswer({ answer, onCancel }) {
+  // Always read the latest draft from parent editingDrafts (so this component stays controlled)
+  const draft = editingDrafts[answer.id] || { text: answer.content || "", preview: answer.image_url || null, file: null };
+  const localFileRef = useRef(null);
+  const textareaRef = useRef(null);
 
-    // update draft helpers
-    const updateDraft = (patch) => {
-      setEditingDrafts(prev => ({ ...(prev || {}), [answer.id]: { ...(prev?.[answer.id] || draft), ...patch } }));
-    };
+  // keep last known caret position across re-renders
+  const caretRef = useRef({ start: 0, end: 0 });
 
-    const onChooseFile = (f) => {
-      if (!f) {
-        updateDraft({ file: null, preview: null });
-        if (localFileRef.current) localFileRef.current.value = "";
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        updateDraft({ file: f, preview: ev.target.result });
-        if (localFileRef.current) localFileRef.current.value = "";
-      };
-      reader.readAsDataURL(f);
-    };
-
-    const onSave = async (ev) => {
-      ev && ev.stopPropagation();
-      const d = editingDrafts[answer.id];
-      if (!d || !d.text || !d.text.trim()) {
-        alert("Please enter content.");
-        return;
-      }
-      setEditingSavingId(answer.id);
+  // auto-focus on mount so keyboard input after clicking Edit goes into this textarea
+  useEffect(() => {
+    // small timeout to ensure DOM is visible/painted (helps with scrolling into view)
+    const t = setTimeout(() => {
       try {
-        let imageData = null;
-        if (d.file) {
-          imageData = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsDataURL(d.file);
-          });
-        } else if (d.preview) {
-          imageData = d.preview;
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          // move caret to end
+          const len = textareaRef.current.value?.length || 0;
+          textareaRef.current.setSelectionRange(len, len);
+          // ensure view follows caret on initial open
+          try { textareaRef.current.scrollTo({ top: textareaRef.current.scrollHeight, behavior: "smooth" }); } catch (e) { textareaRef.current.scrollTop = textareaRef.current.scrollHeight; }
         }
+      } catch (err) { /* ignore */ }
+    }, 80);
+    return () => clearTimeout(t);
+  }, []);
 
-        const updated = await applyEditApi(answer.id, d.text.trim(), imageData);
+  // update draft helpers
+  const updateDraft = (patch) => {
+    setEditingDrafts(prev => ({ ...(prev || {}), [answer.id]: { ...(prev?.[answer.id] || draft), ...patch } }));
+  };
 
-        if (Object.prototype.hasOwnProperty.call(updated, "children")) {
-          setAnswers(prev => {
-            const next = updateNodeById(prev, answer.id, updated);
-            sortDesc(next);
-            return normalize(next);
-          });
-        } else {
-          // server returned no children — fetch authoritative tree
-          await fetchAnswersFromServer();
-        }
-
-        // remove draft and close editor
-        setEditingDrafts(prev => {
-          const next = { ...(prev || {}) };
-          delete next[answer.id];
-          return next;
-        });
-        setEditingAnswerId(null);
-
-        // restore main composer after saving edit
-        setShowComposer(true);
+  // When parent-controlled draft text changes, restore caret and scroll so caret remains visible.
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const { start, end } = caretRef.current || { start: 0, end: 0 };
+    try {
+      // restore selection (caret) if possible
+      ta.setSelectionRange(Math.min(start, ta.value.length), Math.min(end, ta.value.length));
+      // scroll so caret is visible: scroll to bottom smoothly (typing usually at end)
+      // fallback to instant assignment if smooth behavior not supported
+      try {
+        ta.scrollTo({ top: ta.scrollHeight, behavior: "smooth" });
       } catch (err) {
-        console.error("applyEdit error", err);
-        alert(err.message || "Failed to update answer");
-      } finally {
-        setEditingSavingId(null);
+        ta.scrollTop = ta.scrollHeight;
       }
+    } catch (err) {
+      // ignore if browser does not allow selection change
+    }
+  }, [editingDrafts[answer.id]?.text]);
+
+  const onChooseFile = (f) => {
+    if (!f) {
+      updateDraft({ file: null, preview: null });
+      if (localFileRef.current) localFileRef.current.value = "";
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      updateDraft({ file: f, preview: ev.target.result });
+      if (localFileRef.current) localFileRef.current.value = "";
     };
+    reader.readAsDataURL(f);
+  };
 
-    return (
-      <div id={`answer_node_${answer.id}`} onClick={(e) => e.stopPropagation()} className="mt-3">
-        <div className="bg-white border rounded p-3 shadow-sm">
-          <textarea value={draft.text} onChange={(e) => updateDraft({ text: e.target.value })} rows={3} className="w-full border rounded p-2" />
+  const onSave = async (ev) => {
+    ev && ev.stopPropagation();
+    const d = editingDrafts[answer.id];
+    if (!d || !d.text || !d.text.trim()) {
+      alert("Please enter content.");
+      return;
+    }
+    setEditingSavingId(answer.id);
+    try {
+      let imageData = null;
+      if (d.file) {
+        imageData = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(d.file);
+        });
+      } else if (d.preview) {
+        imageData = d.preview;
+      }
 
-          {draft.preview && (
-            <div className="mt-2 relative">
-              <img src={draft.preview} alt="preview" className="max-h-40 rounded" />
-              <button onClick={(ev) => { ev.stopPropagation(); updateDraft({ preview: null, file: null }); }} className="absolute top-1 right-1 bg-gray-900 text-white rounded px-2"><FiX /></button>
-            </div>
-          )}
+      const updated = await applyEditApi(answer.id, d.text.trim(), imageData);
 
-          <div className="mt-2 flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={(ev) => { ev.stopPropagation(); localFileRef.current?.click(); }}
-                className="p-2 rounded-full bg-gray-100 hover:bg-gray-200 transform transition hover:-translate-y-0.5 hover:scale-105 shadow-sm"
-                title="Attach image"
-              >
-                <FaCamera />
-              </button>
-              <input ref={localFileRef} type="file" accept="image/*" className="hidden" onChange={(e) => onChooseFile(e.target.files?.[0])} />
-            </div>
+      if (Object.prototype.hasOwnProperty.call(updated, "children")) {
+        setAnswers(prev => {
+          const next = updateNodeById(prev, answer.id, updated);
+          sortDesc(next);
+          return normalize(next);
+        });
+      } else {
+        // server returned no children — fetch authoritative tree
+        await fetchAnswersFromServer();
+      }
 
-            <div className="ml-auto flex items-center gap-2">
-              <button
-                onClick={(ev) => {
-                  ev.stopPropagation();
-                  // close editor and restore main composer
-                  setEditingAnswerId(null);
-                  setEditingDrafts(prev => {
-                    const next = { ...(prev || {}) };
-                    delete next[answer.id];
-                    return next;
-                  });
-                  setShowComposer(true);
-                  onCancel && onCancel();
-                }}
-                className="px-3 py-1 border rounded hover:shadow-sm transform transition hover:-translate-y-0.5"
-                disabled={Boolean(editingSavingId)}
-              >
-                Cancel
-              </button>
+      // remove draft and close editor
+      setEditingDrafts(prev => {
+        const next = { ...(prev || {}) };
+        delete next[answer.id];
+        return next;
+      });
+      setEditingAnswerId(null);
 
-              <button
-                onClick={onSave}
-                disabled={Boolean(editingSavingId)}
-                className={`px-3 py-1 bg-blue-600 text-white rounded ${editingSavingId ? "opacity-60 cursor-wait" : "hover:shadow-md transform transition hover:-translate-y-0.5 hover:scale-105"}`}
-              >
-                {editingSavingId ? (
-                  <span className="flex items-center gap-2">
-                    <img src={loader} width="18" alt="saving" />
-                    Saving...
-                  </span>
-                ) : "Save"}
-              </button>
-            </div>
+      // restore main composer after saving edit
+      setShowComposer(true);
+    } catch (err) {
+      console.error("applyEdit error", err);
+      alert(err.message || "Failed to update answer");
+    } finally {
+      setEditingSavingId(null);
+    }
+  };
+
+  // handle input change while capturing caret pos BEFORE updating parent state
+  const handleTextareaChange = (e) => {
+    // capture caret positions
+    try {
+      caretRef.current = { start: e.target.selectionStart || 0, end: e.target.selectionEnd || 0 };
+    } catch (err) {
+      caretRef.current = { start: 0, end: 0 };
+    }
+    // update parent-controlled draft text
+    updateDraft({ text: e.target.value });
+  };
+
+  return (
+    <div id={`answer_node_${answer.id}`} onClick={(e) => e.stopPropagation()} className="mt-3">
+      <div className="bg-white border rounded p-3 shadow-sm">
+        <textarea
+          ref={textareaRef}
+          value={editingDrafts[answer.id]?.text ?? draft.text}
+          onChange={handleTextareaChange}
+          rows={3}
+          className="w-full border rounded p-2"
+        />
+
+        {(editingDrafts[answer.id]?.preview || draft.preview) && (
+          <div className="mt-2 relative">
+            <img src={editingDrafts[answer.id]?.preview ?? draft.preview} alt="preview" className="max-h-40 rounded" />
+            <button onClick={(ev) => { ev.stopPropagation(); updateDraft({ preview: null, file: null }); }} className="absolute top-1 right-1 bg-gray-900 text-white rounded px-2"><FiX /></button>
+          </div>
+        )}
+
+        <div className="mt-2 flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={(ev) => { ev.stopPropagation(); localFileRef.current?.click(); }}
+              className="p-2 rounded-full bg-gray-100 hover:bg-gray-200 transform transition hover:-translate-y-0.5 hover:scale-105 shadow-sm"
+              title="Attach image"
+            >
+              <FaCamera />
+            </button>
+            <input ref={localFileRef} type="file" accept="image/*" className="hidden" onChange={(e) => onChooseFile(e.target.files?.[0])} />
+          </div>
+
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={(ev) => {
+                ev.stopPropagation();
+                // close editor and restore main composer
+                setEditingAnswerId(null);
+                setEditingDrafts(prev => {
+                  const next = { ...(prev || {}) };
+                  delete next[answer.id];
+                  return next;
+                });
+                setShowComposer(true);
+                onCancel && onCancel();
+              }}
+              className="px-3 py-1 border rounded hover:shadow-sm transform transition hover:-translate-y-0.5"
+              disabled={Boolean(editingSavingId)}
+            >
+              Cancel
+            </button>
+
+            <button
+              onClick={onSave}
+              disabled={Boolean(editingSavingId)}
+              className={`px-3 py-1 bg-blue-600 text-white rounded ${editingSavingId ? "opacity-60 cursor-wait" : "hover:shadow-md transform transition hover:-translate-y-0.5 hover:scale-105"}`}
+            >
+              {editingSavingId ? (
+                <span className="flex items-center gap-2">
+                  <img src={loader} width="18" alt="saving" />
+                  Saving...
+                </span>
+              ) : "Save"}
+            </button>
           </div>
         </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
+
+
 
   // ---------- render node ----------
   const ONE_DAY_MS = 24 * 60 * 60 * 1000;
