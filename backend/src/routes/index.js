@@ -4,6 +4,8 @@ import postRouter from "./postRouter.js";
 import userRouter from "./userRouter.js";
 import GitHubAuthRouter from "./GitHubAuthRouter.js";
 import forumRouter from "./forumRouter.js";
+import testToxicityRouter from "./testToxicityRouter.js";
+import ragRouter from "./ragRouter.js";
 
 
 export const router = (app) =>{
@@ -13,4 +15,6 @@ export const router = (app) =>{
     app.use("/api/bot", ChatBotRouter);
     app.use("/api/auth", GitHubAuthRouter);
     app.use("/api/forum", forumRouter);
+    app.use("/api/testToxicity", testToxicityRouter);
+    app.use("/api/rag", ragRouter);
 }

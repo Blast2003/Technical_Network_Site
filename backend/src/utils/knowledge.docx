@@ -22,7 +22,7 @@ UI and Navigation:
 
 - Header:
     - Home: Returns to homepage.
-    - Profile: User profile, posts, edit options.
+    - Profile: User profile, posts, edit options, posts creation.
     - Search Bar: Post title search, filters.
     - Notifications: Post updates.
 

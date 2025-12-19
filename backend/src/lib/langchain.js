@@ -3,7 +3,7 @@ import fs from "fs";
 import { DataSource } from "typeorm";
 import { Variables } from "../config/variables.js";
 import { ChatOllama } from "@langchain/ollama";
-import { SqlDatabase } from "langchain/sql_db";
+import { SqlDatabase } from "@langchain/classic/sql_db";
 
 import ollama from 'ollama';
 

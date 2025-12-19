@@ -20,8 +20,8 @@ Forum.init({
   modelName: 'Forum',
   tableName: 'forums',
   timestamps: true,
-  paranoid: true,          // soft-delete support
-  deletedAt: 'deleted_at', // map to your column
+  paranoid: true,
+  deletedAt: 'deleted_at',
   indexes: [
     { fields: ['field_key'] },
     { fields: ['created_by'] },
@@ -40,7 +40,7 @@ ForumMember.init({
   tableName: 'forummembers',
   timestamps: false,
   indexes: [
-    { unique: true, fields: ['forum_id', 'user_id'] }, // ensure single membership row per user/forum
+    { unique: true, fields: ['forum_id', 'user_id'] },
     { fields: ['user_id'] },
   ],
 });
@@ -52,7 +52,7 @@ Thread.init({
   creator_id: { type: DataTypes.INTEGER, allowNull: false, references: { model: User, key: 'id' } },
   title: { type: DataTypes.STRING, allowNull: false },
   content: { type: DataTypes.TEXT, allowNull: true },
-  image_url: { type: DataTypes.STRING, allowNull: true } // support thread card image
+  image_url: { type: DataTypes.STRING, allowNull: true }
 }, { sequelize, modelName: 'Thread', tableName: 'threads', timestamps: true });
 
 class Question extends Model {}
@@ -62,7 +62,7 @@ Question.init({
   creator_id: { type: DataTypes.INTEGER, allowNull: false, references: { model: User, key: 'id' } },
   title: { type: DataTypes.STRING, allowNull: false },
   content: { type: DataTypes.TEXT, allowNull: true },
-  image_url: { type: DataTypes.STRING, allowNull: true } // support image for question
+  image_url: { type: DataTypes.STRING, allowNull: true }
 }, { sequelize, modelName: 'Question', tableName: 'questions', timestamps: true });
 
 class Answer extends Model {}
@@ -72,7 +72,11 @@ Answer.init({
   sender_id: { type: DataTypes.INTEGER, allowNull: false, references: { model: User, key: 'id' } },
   content: { type: DataTypes.TEXT, allowNull: false },
   image_url: { type: DataTypes.STRING, allowNull: true },
-  parent_answer_id: { type: DataTypes.INTEGER, allowNull: true } // we'll set association below
+  parent_answer_id: { type: DataTypes.INTEGER, allowNull: true },
+
+  // Simpler toxicity flags (you requested only boolean + timestamp)
+  is_toxic: { type: DataTypes.BOOLEAN, defaultValue: false },
+  toxic_checked_at: { type: DataTypes.DATE, allowNull: true },
 }, { sequelize, modelName: 'Answer', tableName: 'answers', timestamps: true });
 
 class ForumInvite extends Model {}
@@ -103,7 +107,31 @@ AnswerView.init({
   seen_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
 }, { sequelize, modelName: 'AnswerView', tableName: 'answer_views', timestamps: true, indexes: [{ fields: ['answer_id'] }, { fields: ['user_id'] }] });
 
-// -------------------- Associations --------------------
+// ForumBan model
+class ForumBan extends Model {}
+ForumBan.init({
+  id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
+  forum_id: { type: DataTypes.INTEGER, allowNull: false, references: { model: Forum, key: 'id' } },
+  user_id: { type: DataTypes.INTEGER, allowNull: false, references: { model: User, key: 'id' } },
+  banned_by: { type: DataTypes.INTEGER, allowNull: true, references: { model: User, key: 'id' } },
+  reason: { type: DataTypes.TEXT, allowNull: true },
+  start_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
+  expires_at: { type: DataTypes.DATE, allowNull: true },
+  lifted_at: { type: DataTypes.DATE, allowNull: true },
+  created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
+}, {
+  sequelize,
+  modelName: 'ForumBan',
+  tableName: 'forumbans',
+  timestamps: false,
+  indexes: [
+    { fields: ['forum_id'] },
+    { fields: ['user_id'] },
+    { fields: ['forum_id', 'user_id'] }
+  ],
+});
+
+// Associations
 Forum.hasMany(Thread, { foreignKey: 'forum_id' });
 Thread.belongsTo(Forum, { foreignKey: 'forum_id' });
 
@@ -128,18 +156,20 @@ Question.belongsTo(User, { foreignKey: 'creator_id', as: 'creator' });
 User.hasMany(Answer, { foreignKey: 'sender_id' });
 Answer.belongsTo(User, { foreignKey: 'sender_id', as: 'sender' });
 
-// answer parent-child
 Answer.hasMany(Answer, { foreignKey: 'parent_answer_id', as: 'children' });
 Answer.belongsTo(Answer, { foreignKey: 'parent_answer_id', as: 'parent' });
 
-// AnswerView associations
 Answer.hasMany(AnswerView, { foreignKey: 'answer_id' });
 AnswerView.belongsTo(Answer, { foreignKey: 'answer_id' });
 
 User.hasMany(AnswerView, { foreignKey: 'user_id' });
 AnswerView.belongsTo(User, { foreignKey: 'user_id' });
 
-// Forum creator
 Forum.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
 
-export { Forum, ForumMember, Thread, Question, Answer, ForumInvite, ForumAudit, AnswerView };
+Forum.hasMany(ForumBan, { foreignKey: 'forum_id' });
+ForumBan.belongsTo(Forum, { foreignKey: 'forum_id' });
+User.hasMany(ForumBan, { foreignKey: 'user_id' });
+ForumBan.belongsTo(User, { foreignKey: 'user_id' });
+
+export { Forum, ForumMember, Thread, Question, Answer, ForumInvite, ForumAudit, AnswerView, ForumBan };

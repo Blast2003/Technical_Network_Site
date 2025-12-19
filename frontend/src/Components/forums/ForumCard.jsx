@@ -88,7 +88,7 @@ export default function ForumCard({
       onKeyDown={(e) => { if (e.key === "Enter") handleCardClick(); }}
     >
       <div className="flex items-start gap-3">
-        <div className="w-12 h-12 flex items-center justify-center rounded bg-blue-500 mr-4 flex-shrink-0">
+        <div className="w-12 h-12 flex items-center justify-center rounded bg-blue-500 mr-4 mt-1 flex-shrink-0">
           <span className="text-lg font-bold">{(forum.title || "").slice(0, 2).toUpperCase()}</span>
         </div>
 

@@ -1,6 +1,6 @@
 // import {startConversation, chatResponse, analyzeQuestion, generateQueries, formatQueryResults, identifyTaxonomyKeywords, isSupportedQuery, categorizeTaxonomy, isSupportedTopics, chatResponseFromQueries} from "../utils/chatBotAction.js"
 
-  import {startConversation, chatResponse, isSupportedQuery, chatResponseFromQueries, parseTrendingRequest, chatTrendingSummary} from "../utils/chatBotAction.js"
+import {startConversation, chatResponse, isSupportedQuery, chatResponseFromQueries, parseTrendingRequest, chatTrendingSummary} from "../utils/chatBotAction.js"
 import { sequelize } from '../config/database.js';
 import { QueryTypes } from 'sequelize';
 

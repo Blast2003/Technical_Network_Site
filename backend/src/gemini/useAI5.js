@@ -6,7 +6,7 @@ const apiKey = Variables.GG_API_KEY;
 const genAI = new GoogleGenerativeAI(apiKey);
 
 const model = genAI.getGenerativeModel({
-  model: "gemini-2.0-flash",
+  model: "gemini-2.5-flash-lite",
 });
 
 const generationConfig = {
@@ -81,7 +81,7 @@ Answers (most recent first):
       : "Direct answer to the question";
     // Keep content trimmed to limit tokens
     const snippet = (a.content || "").trim().replace(/\n+/g, " ").slice(0, 1200);
-    prompt += `\n- sender: ${sender}${rolePart}\n  type: ${type}\n  content: ${snippet}\n`;
+    prompt += `\n- sender: ${sender}${rolePart}\n type: ${type}\n content: ${snippet}\n`;
   }
 
   prompt += `\nWrite the summary now. Keep it clear, professional, and highlight important keywords with **bold**. Do not include any numeric ids or database references.`;

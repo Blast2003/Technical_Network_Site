@@ -365,7 +365,7 @@ export default function ForumsPage() {
   }
 
   return (
-    <div className="bg-gray-100 min-h-screen p-4">
+    <div className="bg-gray-200 min-h-screen p-4">
       <div className="flex flex-col md:flex-row justify-center gap-6">
         <aside className="hidden md:block md:w-64">
           <div className="bg-white rounded-lg shadow p-4">

@@ -14,10 +14,13 @@ import {
   ForumInvite,
   ForumAudit,
   AnswerView,
+  ForumBan,
 } from "../models/forumModel.js";
 import { User } from "../models/userModel.js";
 
 import { getUserForumRole, canViewForumContents } from "../services/forumPermissions.js";
+import { analyzeToxicityLevel } from "../services/aiToxicity.js";
+import { createBan, getActiveBan, liftBan } from "../services/forumBanService.js";
 
 /**
  * Helper: upload image (base64 or file url) to Cloudinary, return secure_url or null
@@ -29,6 +32,28 @@ async function uploadIfPresent(img) {
   }
   const uploaded = await cloudinary.uploader.upload(img);
   return uploaded.secure_url;
+}
+
+
+function durationToMs(durationKey) {
+  switch (durationKey) {
+    case "1d": return 24 * 3600 * 1000;
+    case "7d": return 7 * 24 * 3600 * 1000;
+    case "1m": return 30 * 24 * 3600 * 1000;
+    case "6m": return 6 * 30 * 24 * 3600 * 1000;
+    case "forever": return null;
+    default: return null;
+  }
+}
+
+function recommendBanByCount(count) {
+  // deterministic rule-based recommendation (no AI)
+  // You can change thresholds as you want.
+  if (count <= 1) return { duration: "1d", label: "1 day" };
+  if (count <= 3) return { duration: "7d", label: "7 days" };
+  if (count <= 6) return { duration: "1m", label: "1 month" };
+  if (count <= 9) return { duration: "6m", label: "6 months" };
+  return { duration: "forever", label: "forever" };
 }
 
 
@@ -715,9 +740,19 @@ export const listQuestions = async (req, res) => {
       return res.json({ total: count, questions: [] });
     }
 
+    // Only count answers that are visible to the requesting user:
+    // visible := (is_toxic = false) OR (sender_id = currentUser)
+    const visibleAnswerWhere = {
+      question_id: { [Op.in]: questionIds },
+      [Op.or]: [
+        { is_toxic: false },
+        { sender_id: userId }
+      ]
+    };
+
     // --- batch answer counts per question (total answers) ---
     const answerCounts = await Answer.findAll({
-      where: { question_id: { [Op.in]: questionIds } },
+      where: visibleAnswerWhere,
       attributes: ["question_id", [Sequelize.fn("COUNT", Sequelize.col("id")), "answerCount"]],
       group: ["question_id"],
       raw: true,
@@ -730,7 +765,11 @@ export const listQuestions = async (req, res) => {
     const newAnswerCounts = await Answer.findAll({
       where: {
         question_id: { [Op.in]: questionIds },
-        createdAt: { [Op.gte]: last24Cutoff }
+        createdAt: { [Op.gte]: last24Cutoff },
+        [Op.or]: [
+          { is_toxic: false },
+          { sender_id: userId }
+        ]
       },
       attributes: ["question_id", [Sequelize.fn("COUNT", Sequelize.col("id")), "newCount"]],
       group: ["question_id"],
@@ -828,7 +867,11 @@ export const generateAnswerSummary = async (req, res) => {
     // fetch up to 10 answers created in the last 24 hours (most recent first)
     const last24Cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const recentAnswers = await Answer.findAll({
-      where: { question_id: questionId, createdAt: { [Op.gte]: last24Cutoff } },
+      where: { question_id: questionId, 
+        createdAt: { [Op.gte]: last24Cutoff }, 
+        // exclude toxic answers from summarization
+        is_toxic: false,
+      },
       include: [{ model: User, as: "sender", attributes: ["id", "username", "profilePic"] }],
       order: [["createdAt", "DESC"]],
       limit: 10,
@@ -1004,7 +1047,7 @@ export const deleteQuestion = async (req, res) => {
 };
 
 
-// list Answers
+// ----------------- listAnswers -----------------
 export const listAnswers = async (req, res) => {
   try {
     const questionId = parseInt(req.params.questionId, 10);
@@ -1017,27 +1060,35 @@ export const listAnswers = async (req, res) => {
     const canView = await canViewForumContents(userId, forumId);
     if (!canView) return res.status(403).json({ error: "Join forum to view answers" });
 
+    // Fetch all answers for the question (we'll filter banned ones below)
     const answersRaw = await Answer.findAll({
       where: { question_id: questionId },
       include: [{ model: User, as: "sender", attributes: ["id", "username", "profilePic"] }],
       order: [["createdAt", "ASC"]],
     });
 
-    // compute reply counts
+    // Filter: remove banned (is_toxic) answers for anyone except the sender themselves.
+    // This means only the creator (sender) will see their own banned answers.
+    const answersVisible = answersRaw.filter(a => {
+      // keep answer if not toxic OR if the current user is the sender
+      return !a.is_toxic || Number(a.sender_id) === Number(userId);
+    });
+
+    // compute reply counts (based on visible answers only)
     const replyCountMap = {};
-    answersRaw.forEach((a) => {
+    answersVisible.forEach((a) => {
       const parentId = a.parent_answer_id;
       if (parentId) replyCountMap[parentId] = (replyCountMap[parentId] || 0) + 1;
     });
 
-    // fetch forum member roles for the senders
-    const senderIds = [...new Set(answersRaw.map((a) => a.sender_id))];
+    // fetch forum member roles for the senders (for visible senders)
+    const senderIds = [...new Set(answersVisible.map((a) => a.sender_id))];
     const forumRoles = senderIds.length > 0 ? await ForumMember.findAll({ where: { forum_id: forumId, user_id: senderIds } }) : [];
     const roleMap = {};
     forumRoles.forEach((r) => (roleMap[r.user_id] = r.role));
 
-    // scoring heuristic
-    const scored = answersRaw.map((a) => {
+    // scoring heuristic (skip boosting banned answers for others because banned ones already filtered out)
+    const scored = answersVisible.map((a) => {
       const reply_count = replyCountMap[a.id] || 0;
       const role = roleMap[a.sender_id] || null;
       const isAdmin = role === "forum_admin" || role === "global_admin";
@@ -1054,7 +1105,7 @@ export const listAnswers = async (req, res) => {
     const highlightedIds = new Set(highlightedAnswers.map((a) => a.id));
 
     // build nested structure and attach senderRole
-    const all = answersRaw.map((a) => {
+    const all = answersVisible.map((a) => {
       const obj = a.toJSON();
       obj.children = [];
       obj.senderName = (obj.sender && obj.sender.username) || null;
@@ -1085,7 +1136,7 @@ export const listAnswers = async (req, res) => {
   }
 };
 
-// create Answers
+// ----------------- createAnswer (modified emission behavior for banned answers) -----------------
 export const createAnswer = async (req, res) => {
   const t = await sequelize.transaction();
   try {
@@ -1097,33 +1148,121 @@ export const createAnswer = async (req, res) => {
     if (!question) { await t.rollback(); return res.status(404).json({ error: "Question not found" }); }
 
     const thread = await Thread.findByPk(question.thread_id, { transaction: t });
+    if (!thread) { await t.rollback(); return res.status(404).json({ error: "Thread not found" }); }
+
     const { isGlobal, role } = await getUserForumRole(senderId, thread.forum_id);
-    if (!(isGlobal || role === "member" || role === "forum_admin" || role === "global_admin")) { await t.rollback(); return res.status(403).json({ error: "Join forum to reply" }); }
+    if (!(isGlobal || role === "member" || role === "forum_admin" || role === "global_admin")) {
+      await t.rollback();
+      return res.status(403).json({ error: "Join forum to reply" });
+    }
+
+    // check active ban
+    const activeBan = await getActiveBan(thread.forum_id, senderId);
+    if (activeBan) {
+      await t.rollback();
+      const expiresAt = activeBan.expires_at ? activeBan.expires_at : null;
+      return res.status(403).json({ error: "User banned from posting in this forum", banned_until: expiresAt });
+    }
 
     const image_url = await uploadIfPresent(image);
-    const answer = await Answer.create({ question_id: questionId, sender_id: senderId, content: content || "", image_url: image_url || null, parent_answer_id: parent_answer_id || null }, { transaction: t });
 
-    await ForumAudit.create({ actor_id: senderId, forum_id: thread.forum_id, action: "create_answer", meta: { answerId: answer.id } }, { transaction: t });
+    const answer = await Answer.create({
+      question_id: questionId,
+      sender_id: senderId,
+      content: content || "",
+      image_url: image_url || null,
+      parent_answer_id: parent_answer_id || null,
+      // toxic fields will be updated after AI check
+    }, { transaction: t });
+
+    // Use the detailed AI classifier (returns {level, explanation})
+    let toxicLevel = 1;
+    let toxicExplanation = null;
+
+    try {
+      const aiContext = {
+        question: { title: question.title, content: question.content || "" },
+        thread: { title: thread.title }
+      };
+      const aiResult = await analyzeToxicityLevel(content || "", aiContext, 60000);
+      toxicLevel = aiResult && aiResult.level ? aiResult.level : 1;
+      console.log("\n\n\n\n\ aaaaaaa: ", toxicLevel);
+      toxicExplanation = aiResult && aiResult.explanation ? aiResult.explanation : null;
+
+      // Update answer record with level + explanation + toxic flag if level 3
+      await answer.update({
+        is_toxic: toxicLevel === 3,
+        toxic_level: toxicLevel,
+        toxic_explanation: toxicExplanation,
+        toxic_checked_at: new Date()
+      }, { transaction: t });
+
+      // Create relevant forum audits
+      if (toxicLevel === 3) {
+        await ForumAudit.create({
+          actor_id: senderId,
+          forum_id: thread.forum_id,
+          action: "flag_toxic_answer",
+          meta: { answerId: answer.id, level: toxicLevel, explanation: toxicExplanation }
+        }, { transaction: t });
+      } else if (toxicLevel === 2) {
+        // Medium: record an audit for moderator visibility but DO NOT mark as banned
+        await ForumAudit.create({
+          actor_id: senderId,
+          forum_id: thread.forum_id,
+          action: "flag_medium_toxic_answer",
+          meta: { answerId: answer.id, level: toxicLevel, explanation: toxicExplanation }
+        }, { transaction: t });
+      }
+    } catch (aiErr) {
+      console.error("AI toxicity check failed:", aiErr);
+      // don't fail request; leave default flags (is_toxic false) and toxic_level default
+      await answer.update({
+        toxic_checked_at: new Date(),
+        toxic_level: 1,
+        toxic_explanation: "ai-check-failed-or-unclear"
+      }, { transaction: t });
+    }
+
+    await ForumAudit.create({
+      actor_id: senderId,
+      forum_id: thread.forum_id,
+      action: "create_answer",
+      meta: { answerId: answer.id }
+    }, { transaction: t });
+
     await t.commit();
 
-    // attach sender role for the emitted payload
+    // attach sender role for emitted payload
     const senderRoleRow = await ForumMember.findOne({ where: { forum_id: thread.forum_id, user_id: senderId } });
     const senderRole = senderRoleRow ? senderRoleRow.role : null;
     const answerJson = answer.toJSON();
     answerJson.senderRole = senderRole;
-    // include senderName/profile if needed
     const sender = await User.findByPk(senderId, { attributes: ["id", "username", "profilePic"] });
     answerJson.senderName = sender?.username || null;
     answerJson.senderProfilePic = sender?.profilePic || null;
+    // include AI metadata so UI can display moderation hints if desired
+    answerJson.toxic_level = toxicLevel;
+    answerJson.toxic_explanation = toxicExplanation;
 
-    // emit to question room so viewers of the question get the new answer
-    io.to(`question_${questionId}`).emit("new_answer", { answer: answerJson });
+    // IMPORTANT: only treat level 3 as "banned" (do not broadcast / show to others)
+    if (toxicLevel === 3) {
+      try {
+        const socketId = getRecipientSocketId(String(senderId));
+        if (socketId) {
+          io.to(socketId).emit("new_answer", { answer: answerJson, banned: true });
+        }
+        // do NOT emit question_answer_delta or thread-level delta to avoid incrementing counts for other users
+      } catch (emitErr) {
+        console.warn("Failed to emit banned answer privately:", emitErr);
+      }
+    } else {
+      // Normal flow: broadcast the new answer to question room and thread delta
+      io.to(`question_${questionId}`).emit("new_answer", { answer: answerJson });
+      io.to(`thread_${thread.id}`).emit("question_answer_delta", { questionId, delta: 1 });
+    }
 
-    // ALSO emit a delta event to the thread room so the left list badges can update for all thread viewers
-    // delta: +1 for created answer
-    io.to(`thread_${thread.id}`).emit("question_answer_delta", { questionId, delta: 1 });
-
-    // notify question owner privately (if online)
+    // notify question owner
     if (question.creator_id && question.creator_id !== senderId) {
       const ownerSocket = getRecipientSocketId(String(question.creator_id));
       if (ownerSocket) io.to(ownerSocket).emit("new_answer_for_owner", { questionId, answerId: answer.id, from: senderId });
@@ -1444,5 +1583,353 @@ export const removeForumMember = async (req, res) => {
   } catch (err) {
     console.error("removeForumMember error", err);
     return res.status(500).json({ error: "Failed to remove member" });
+  }
+};
+
+
+// ---------------- list toxic users + recommendation ----------------
+export const listToxicUsers = async (req, res) => {
+  try {
+    const forumId = parseInt(req.params.forumId, 10);
+    if (!forumId) return res.status(400).json({ error: "forumId required" });
+
+    // Only return users who have answers in this forum that were flagged is_toxic = true
+    // IMPORTANT: set required: true to force INNER JOIN on Question and Thread so the
+    // aggregation only counts answers that belong to threads of this forum.
+    const rows = await Answer.findAll({
+      attributes: [
+        'sender_id',
+        [Sequelize.fn('COUNT', Sequelize.col('Answer.id')), 'toxic_count'],
+        [Sequelize.fn('MAX', Sequelize.col('Answer.toxic_checked_at')), 'last_toxic_at']
+      ],
+      include: [{
+        model: Question,
+        attributes: [],
+        required: true, // <- force inner join
+        include: [{
+          model: Thread,
+          attributes: [],
+          required: true, // <- force inner join
+          where: { forum_id: forumId }
+        }]
+      }],
+      where: { is_toxic: true },
+      group: ['Answer.sender_id'],
+      order: [[Sequelize.literal('toxic_count'), 'DESC']],
+      raw: true
+    });
+
+    const userIds = rows.map(r => r.sender_id);
+    const users = userIds.length ? await User.findAll({ where: { id: userIds }, attributes: ['id','username','profilePic'] }) : [];
+    const byId = {};
+    users.forEach(u => byId[u.id] = u);
+
+    const result = rows.map(r => {
+      const count = Number(r.toxic_count || 0);
+      const rec = recommendBanByCount(count);
+      return {
+        userId: r.sender_id,
+        username: byId[r.sender_id]?.username || null,
+        profilePic: byId[r.sender_id]?.profilePic || null,
+        toxic_count: count,
+        last_toxic_at: r.last_toxic_at,
+        recommended_ban: rec // { duration: "7d", label: "7 days" }
+      };
+    });
+
+    return res.json({ list: result });
+  } catch (err) {
+    console.error("listToxicUsers error", err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+// ---------------- list current banned users in a forum ----------------
+export const listBannedUsers = async (req, res) => {
+  try {
+    const forumId = parseInt(req.params.forumId, 10);
+
+    const now = new Date();
+    const bans = await ForumBan.findAll({
+      where: {
+        forum_id: forumId,
+        lifted_at: null,
+        [Op.or]: [
+          { expires_at: null },
+          { expires_at: { [Op.gt]: now } }
+        ]
+      },
+      include: [{ model: User, attributes: ['id','username','profilePic'] }],
+      order: [['start_at', 'DESC']]
+    });
+
+    const list = bans.map(b => ({
+      banId: b.id,
+      userId: b.user_id,
+      username: b.User?.username || null,
+      profilePic: b.User?.profilePic || null,
+      start_at: b.start_at,
+      expires_at: b.expires_at,
+      reason: b.reason,
+      banned_by: b.banned_by
+    }));
+
+    return res.json({ list });
+  } catch (err) {
+    console.error("listBannedUsers error", err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+// ---------------- ban a member (already present) ----------------
+export const banForumMember = async (req, res) => {
+  try {
+    const forumId = parseInt(req.params.forumId, 10);
+    const userId = parseInt(req.params.userId, 10);
+    const adminId = req.user.id;
+    const { duration = "7d", reason = null } = req.body;
+
+    const { isGlobal, role } = await getUserForumRole(adminId, forumId);
+    if (!(isGlobal || role === 'forum_admin' || role === 'global_admin')) return res.status(403).json({ error: "Must be forum admin to ban" });
+
+    const durationMs = durationToMs(duration);
+    const banRow = await createBan({ forumId, userId, bannedBy: adminId, reason, durationMs });
+
+    await ForumAudit.create({
+      actor_id: adminId,
+      forum_id: forumId,
+      action: "ban_user",
+      meta: { userId, banId: banRow.id, duration, reason }
+    });
+
+    // --- NEW: emit realtime events to affected user and forum room ---
+    try {
+      const payload = {
+        forumId,
+        userId,
+        ban: {
+          id: banRow.id,
+          start_at: banRow.start_at,
+          expires_at: banRow.expires_at,
+          reason: banRow.reason,
+          banned_by: banRow.banned_by
+        },
+        message: "You have been banned from the forum"
+      };
+
+      // target the affected user (normalize key to string to avoid type mismatch)
+      const recipientSocketId = getRecipientSocketId(String(userId));
+      if (recipientSocketId) {
+        io.to(recipientSocketId).emit("forum_banned", payload);
+      }
+
+      // optional: notify the forum room (admins/members) about the ban
+      io.to(`forum_${forumId}`).emit("forum_ban_event", {
+        forumId,
+        userId,
+        bannedBy: adminId,
+        banId: banRow.id,
+        start_at: banRow.start_at,
+        expires_at: banRow.expires_at,
+      });
+    } catch (emitErr) {
+      console.warn("Failed to emit forum_banned:", emitErr);
+    }
+    // --- end realtime emit ---
+
+    return res.status(201).json({ success: true, ban: { id: banRow.id, expires_at: banRow.expires_at } });
+  } catch (err) {
+    console.error("banForumMember error", err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+// ---------------- unban a specific member (must be member of forum) ----------------
+export const unbanForumMember = async (req, res) => {
+  try {
+    const forumId = parseInt(req.params.forumId, 10);
+    const userId = parseInt(req.params.userId, 10);
+    const adminId = req.user.id;
+
+    const { isGlobal, role } = await getUserForumRole(adminId, forumId);
+    if (!(isGlobal || role === 'forum_admin' || role === 'global_admin')) return res.status(403).json({ error: "Must be forum admin to unban" });
+
+    // ensure the target user is still a forum member (your requirement)
+    const memberRow = await ForumMember.findOne({ where: { forum_id: forumId, user_id: userId } });
+    if (!memberRow) return res.status(400).json({ error: "Target user is not a member of this forum" });
+
+    const count = await liftBan(forumId, userId, adminId);
+    await ForumAudit.create({
+      actor_id: adminId,
+      forum_id: forumId,
+      action: "unban_user",
+      meta: { userId, lifted_count: count }
+    });
+
+    // --- NEW: emit realtime events to affected user and forum room ---
+    try {
+      const payload = {
+        forumId,
+        userId,
+        message: "Your ban has been lifted"
+      };
+
+      const recipientSocketId = getRecipientSocketId(String(userId));
+      if (recipientSocketId) {
+        io.to(recipientSocketId).emit("forum_unbanned", payload);
+      }
+
+      io.to(`forum_${forumId}`).emit("forum_unban_event", {
+        forumId,
+        userId,
+        liftedBy: adminId
+      });
+    } catch (emitErr) {
+      console.warn("Failed to emit forum_unbanned:", emitErr);
+    }
+    // --- end realtime emit ---
+
+    return res.json({ success: true, lifted: count });
+  } catch (err) {
+    console.error("unbanForumMember error", err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+// ---------------- check ban status (useful for admin UI) ----------------
+export const checkUserBanStatus = async (req, res) => {
+  try {
+    const forumId = parseInt(req.params.forumId, 10);
+    const userId = parseInt(req.params.userId, 10);
+    const ban = await getActiveBan(forumId, userId);
+    if (!ban) return res.json({ banned: false });
+    return res.json({
+      banned: true,
+      ban: {
+        id: ban.id,
+        start_at: ban.start_at,
+        expires_at: ban.expires_at,
+        reason: ban.reason,
+        banned_by: ban.banned_by
+      }
+    });
+  } catch (err) {
+    console.error("checkUserBanStatus error", err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+
+// list toxic answers for a given user within a forum
+export const listToxicAnswersForUser = async (req, res) => {
+  try {
+    const forumId = parseInt(req.params.forumId, 10);
+    const userId = parseInt(req.params.userId, 10);
+    if (!forumId || !userId) return res.status(400).json({ error: "forumId and userId required" });
+
+    // Use Sequelize associations: Answer -> Question -> Thread
+    // Put the forum filter on the nested include (Thread.where) and force INNER JOINs
+    const answers = await Answer.findAll({
+      where: { sender_id: userId, is_toxic: true },
+      include: [
+        {
+          model: Question,
+          attributes: ['id', 'title', 'thread_id'],
+          required: true, // <- force inner join
+          include: [
+            {
+              model: Thread,
+              attributes: ['id', 'title', 'forum_id'],
+              required: true, // <- force inner join
+              where: { forum_id: forumId } // restrict to this forum
+            }
+          ]
+        }
+      ],
+      order: [['createdAt', 'DESC']],
+      limit: 500
+    });
+
+    // map to frontend-friendly shape
+    const results = (answers || []).map(a => {
+      const aj = a.toJSON();
+      const q = aj.Question || {};
+      const t = q.Thread || {};
+      return {
+        id: aj.id,
+        content: aj.content,
+        createdAt: aj.createdAt,
+        questionId: q.id || null,
+        questionTitle: q.title || null,
+        threadId: t.id || null,
+        threadTitle: t.title || null,
+      };
+    });
+
+    return res.json({ answers: results });
+  } catch (err) {
+    console.error("listToxicAnswersForUser error", err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+
+// check ban status for current user (self)
+export const checkMyBanStatus = async (req, res) => {
+  try {
+    const forumId = parseInt(req.params.forumId, 10);
+    const userId = req.user?.id;
+    if (!forumId || !userId) return res.status(400).json({ error: "forumId required" });
+
+    const ban = await getActiveBan(forumId, userId);
+    if (!ban) return res.json({ banned: false });
+    return res.json({
+      banned: true,
+      ban: {
+        id: ban.id,
+        start_at: ban.start_at,
+        expires_at: ban.expires_at,
+        reason: ban.reason,
+        banned_by: ban.banned_by
+      }
+    });
+  } catch (err) {
+    console.error("checkMyBanStatus error", err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+
+// ---------------- list full ban history for a user in a forum ----------------
+export const listUserBanHistory = async (req, res) => {
+  try {
+    const forumId = parseInt(req.params.forumId, 10);
+    const userId = parseInt(req.params.userId, 10);
+    if (!forumId || !userId) return res.status(400).json({ error: "forumId and userId required" });
+
+    // fetch all bans for this forum + user sorted by start_at desc
+    const bans = await ForumBan.findAll({
+      where: { forum_id: forumId, user_id: userId },
+      order: [['start_at', 'DESC']],
+      limit: 1000 // safe cap
+    });
+
+    // normalize structure for client
+    const list = bans.map(b => ({
+      id: b.id,
+      forum_id: b.forum_id,
+      user_id: b.user_id,
+      banned_by: b.banned_by,
+      reason: b.reason,
+      start_at: b.start_at,
+      expires_at: b.expires_at,
+      lifted_at: b.lifted_at,
+      created_at: b.created_at
+    }));
+
+    return res.json({ bans: list });
+  } catch (err) {
+    console.error("listUserBanHistory error", err);
+    return res.status(500).json({ error: err.message });
   }
 };

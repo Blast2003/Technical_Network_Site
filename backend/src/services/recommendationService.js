@@ -144,8 +144,8 @@ export async function computeTaxonomyScores({ user, userRecentPosts = [], follow
     TAXONOMY_LIST.forEach(t => (score_profile[t] = (aiPredict && aiPredict === t) ? PROFILE_WEIGHT : 0));
   } else {
     for (const t of TAXONOMY_LIST) {
-      const base = ((postCounts[t] || 0) / postTotal) * PROFILE_WEIGHT;
-      const aiBonus = (aiPredict && aiPredict === t) ? (PROFILE_WEIGHT * 0.5) : 0;
+      const base = ((postCounts[t] || 0) / postTotal) * PROFILE_WEIGHT; // base = analyze user's posts
+      const aiBonus = (aiPredict && aiPredict === t) ? (PROFILE_WEIGHT * 0.5) : 0; // aiBonus = use AI analyze user profile + post
       score_profile[t] = Math.min(PROFILE_WEIGHT, base + aiBonus);
 
       console.log("\n\n base: ",base)
@@ -188,6 +188,8 @@ export async function computeTaxonomyScores({ user, userRecentPosts = [], follow
   const totalScore = {};
   const levels = {};
   for (const t of TAXONOMY_LIST) {
+    console.log(`\n\n\n\n\n score_profile[t] for : ${t}`, score_profile[t])
+    console.log(`\n\n\n\n\n score_follow[t] for : ${t}`, score_follow[t])
     const s = parseFloat((score_profile[t] + score_trend[t] + score_follow[t]).toFixed(4));
     const clamped = Math.max(0, Math.min(10, s));
     totalScore[t] = clamped;

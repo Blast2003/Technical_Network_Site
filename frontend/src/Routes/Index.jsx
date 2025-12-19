@@ -20,6 +20,7 @@ import SpecificPostPage from '../Pages/SpecificPostPage'
 import ForumsPage from "../Pages/ForumsPage"
 import ForumDetailPage from "../Pages/ForumDetailPage"
 import ThreadPage from "../Pages/ThreadPage"
+import ForumToxicLogPage from "../Pages/ForumToxicLogPage" 
 
 
 const Index = () => {
@@ -49,6 +50,7 @@ const Index = () => {
           <Route path="forums" element={user ? <ForumsPage/> : <Navigate to="/signin"/>} />
           <Route path="forums/:forumId" element={user ? <ForumDetailPage/> : <Navigate to="/signin"/>} />
           <Route path="forums/:forumId/threads/:threadId" element={user ? <ThreadPage/> : <Navigate to="/signin"/>} />
+          <Route path="forums/:forumId/toxic" element={user ? <ForumToxicLogPage/> : <Navigate to="/signin"/>} />
 
         </Route>
 

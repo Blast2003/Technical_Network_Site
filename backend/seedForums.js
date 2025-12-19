@@ -177,7 +177,7 @@ async function run() {
         }
       }
     }
-
+a
     // 4) Create template threads for each forum (if not exist)
     const threadTemplates = ["Announcements", "Career Path Questions", "Troubleshooting / Debug Help"];
     const createdThreads = [];

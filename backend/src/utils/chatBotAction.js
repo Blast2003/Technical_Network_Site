@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 import ollama from 'ollama';
 // import { sequelize } from '../config/database.js';
 
-import { db, generatePopularityQuery, generateSummary, generateTopicQuery } from "../lib/langchain.js";
+import { db, generateSummary } from "../lib/langchain.js";
 import analyzeInputTaxonomy from '../gemini/DefineUserInputFromTaxonomy.js';
 
 // Create __dirname equivalent for ES modules
@@ -649,6 +649,25 @@ export async function chatResponse(threadId, userInput) {
 export function isSupportedQuery(userInput) {
   const q = userInput.toLowerCase();
 
+  // 1) Help / feature / how-to intent: if matched, treat as NOT a DB retrieval query
+  const helpPatterns = [
+    /\bhow to\b/,                    // "how to create a post"
+    /\bhow (do|can) i\b/,            // "how do i post", "how can i create"
+    /\bhow\b.*\bcreate\b/,           // "how create post", "how to create"
+    /\bcreate (a )?post(s)?\b/,      // "create post", "create a post"
+    /\badding? posts?\b/,            // "adding posts", "adding a post"
+    /\bwhat is (the )?feature\b/,    // "what is the post feature"
+    /\bhow to (enable|disable|configure|setup)\b/,
+    /\busage (of|for)\b/,            // "usage of posts", "usage for creating posts"
+    /\bexample(s)? (of|for)\b/       // "examples of creating posts"
+  ];
+
+  if (helpPatterns.some(rx => rx.test(q))) {
+    // This is a user asking *how to* / feature question → NOT a DB query
+    return false;
+  }
+
+  // 2) Existing "data retrieval" patterns for posts/topics (unchanged logic)
   const patterns = [
     /\bpopular posts?\b/,
     /\bfamous posts?\b/,

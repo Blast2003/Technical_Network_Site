@@ -63,4 +63,30 @@ forumRouter.patch("/:forumId/members/:userId/role", protectRoutes, isGlobalAdmin
 // Remove a member from forum (global admin only)
 forumRouter.delete("/:forumId/members/:userId", protectRoutes, isGlobalAdmin, forumCtrl.removeForumMember);
 
+
+// ---------------- New endpoints for toxicity / bans --------------------
+// List toxic users in a forum (forum_admin or global_admin)
+forumRouter.get("/:forumId/toxic-users", protectRoutes, isForumAdmin, forumCtrl.listToxicUsers);
+
+// List currently active bans for a forum (forum_admin)
+forumRouter.get("/:forumId/bans", protectRoutes, isForumAdmin, forumCtrl.listBannedUsers);
+
+// Ban / unban endpoints (forum_admin or global_admin)
+forumRouter.post("/:forumId/ban/:userId", protectRoutes, isForumAdmin, forumCtrl.banForumMember);
+forumRouter.post("/:forumId/ban/:userId/unban", protectRoutes, isForumAdmin, forumCtrl.unbanForumMember);
+
+// Check user ban status (admin)
+forumRouter.get("/:forumId/ban/:userId/status", protectRoutes, isForumAdmin, forumCtrl.checkUserBanStatus);
+
+// List toxic answer of specific user
+forumRouter.get("/:forumId/toxic-users/:userId/answers", protectRoutes, isForumAdmin, forumCtrl.listToxicAnswersForUser);
+
+// allow current user to check their ban status for a forum
+forumRouter.get("/:forumId/ban/me", protectRoutes, forumCtrl.checkMyBanStatus);
+
+
+// NEW: history of bans for a specific user in a forum (forum_admin)
+forumRouter.get("/:forumId/bans/:userId/history", protectRoutes, isForumAdmin, forumCtrl.listUserBanHistory);
+
+
 export default forumRouter;

@@ -15,6 +15,7 @@ export default function QuestionDetail({ question, currentUser, forum, thread, o
 
   const [answers, setAnswers] = useState([]);
   const [loadingAnswers, setLoadingAnswers] = useState(false);
+  console.log("answers: ", answers)
 
   // composer
   const [composerText, setComposerText] = useState("");
@@ -165,6 +166,11 @@ export default function QuestionDetail({ question, currentUser, forum, thread, o
     let count = 0;
     const walk = (arr) => {
       for (const n of arr) {
+        // skip counting toxic answers, but still walk into their children
+        if (n.is_toxic) {
+          if (n.children && n.children.length) walk(n.children);
+          continue;
+        }
         try {
           const t = new Date(n.createdAt).getTime();
           if (!Number.isNaN(t) && t >= cutoff) count++;
@@ -780,8 +786,9 @@ function EditAnswer({ answer, onCancel }) {
     const canEdit = isOwner;
     const canDelete = isOwner || isCurrentUserAdmin;
     const canReply = user && String(user.id) !== String(a.sender_id);
+    const isToxic = a.is_toxic; // <-- check toxic flag
     const createdAt = new Date(a.createdAt).getTime ? new Date(a.createdAt).getTime() : Date.now();
-    const isNew = (Date.now() - createdAt) < ONE_DAY_MS;
+    const isNew = !isToxic && (Date.now() - createdAt) < ONE_DAY_MS;
     const bg = level % 2 === 0 ? "bg-white" : "bg-gray-50";
     const leftIndentPx = Math.min(level * 20, 160);
 
@@ -818,7 +825,7 @@ function EditAnswer({ answer, onCancel }) {
               </div>
 
               <div>
-                <div className="flex items-center gap-2">
+                <div className={`flex items-center gap-2`}>
                   <div className="font-medium text-sm">{a.senderName || a.sender?.username}</div>
                   {(String(a.sender_id) === String(question.creator_id)) && (
                     <div className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">Author</div>
@@ -829,6 +836,11 @@ function EditAnswer({ answer, onCancel }) {
                   {isNew && (
                     <div className="ml-1 text-xs px-2 py-0.5 rounded bg-yellow-300 text-yellow-800 font-semibold animate-pulse transform transition hover:-translate-y-0.5">
                       NEW
+                    </div>
+                  )}
+                  {isToxic && (
+                    <div className="ml-1 text-xs px-2 py-0.5 rounded bg-red-300 text-red-800 font-semibold animate-pulse transform transition hover:-translate-y-0.5">
+                      BANNED
                     </div>
                   )}
                 </div>
@@ -843,12 +855,13 @@ function EditAnswer({ answer, onCancel }) {
                     ev.stopPropagation();
                     startEditing(a);
                   }}
-                  className="text-xs px-2 py-1 border rounded hover:bg-gray-50 transition"
+                  disabled={isToxic}
+                  className={`text-xs px-2 py-1 border rounded hover:bg-gray-50 transition ${isToxic ? "cursor-not-allowed" : ""} `}
                 >
                   Edit
                 </button>
               )}
-              {canDelete && <button onClick={(ev) => { ev.stopPropagation(); removeAnswer(a.id); }} className="text-xs px-2 py-1 border rounded text-red-600 hover:bg-red-50 transition">Delete</button>}
+              {canDelete && <button onClick={(ev) => { ev.stopPropagation(); removeAnswer(a.id); }} disabled={isToxic} className={`text-xs px-2 py-1 border rounded text-red-600 hover:bg-red-50 transition ${isToxic ? "cursor-not-allowed" : ""}`}>Delete</button>}
               {canReply && (
                 <button
                   onClick={(ev) => {
@@ -879,7 +892,7 @@ function EditAnswer({ answer, onCancel }) {
               }} />
             ) : (
               <>
-                <div className="text-sm">{a.content}</div>
+                <div className={`text-sm ${isToxic ? "blur-sm hover:blur-0 hover:cursor-pointer" : ""}`}>{a.content}</div>
                 {a.image_url && <img src={a.image_url} alt="answer" className="mt-3 max-h-48 rounded object-contain" />}
               </>
             )}
@@ -901,7 +914,7 @@ function EditAnswer({ answer, onCancel }) {
   // ---------- compute visible new count ----------
   const initialUnseen = Number(question?.unseenCount || 0);
   const nodeNewCount = countNewAnswersFromNodes(answers);
-  const computedNewCount = loadingAnswers ? initialUnseen : Math.max(initialUnseen, nodeNewCount);
+  const computedNewCount = loadingAnswers ? initialUnseen : nodeNewCount;
 
   // ---------- fetch AI summary and show modal ----------
   async function fetchAndShowSummary({ forceRefresh = false } = {}) {

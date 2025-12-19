@@ -27,7 +27,7 @@ const FreezeAccountPage = () => {
         to row layout on medium screens and up 
       */}
       <div className="flex flex-col md:flex-row justify-center">
-        <aside className="sm:items-center sm:justify-center md:block md:w-66 p-4 lg:h-[560px]">
+        <aside className="sm:items-center sm:justify-center md:block md:w-66 p-4 lg:h-[590px]">
           <div className="bg-white rounded-lg shadow p-4 h-full mt-5">
             <LeftNav />
           </div>

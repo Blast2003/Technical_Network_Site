@@ -6,6 +6,7 @@ import { useRecoilValue } from "recoil";
 import userAtom from "../Atoms/userAtom";
 import loader from "../assets/loader.svg";
 import { toast } from 'react-toastify';
+import { FiFileText } from "react-icons/fi"; // NEW: logs icon
 
 export default function ForumDetailPage(){
   const { forumId } = useParams();
@@ -17,6 +18,8 @@ export default function ForumDetailPage(){
   const [threads, setThreads] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
+
+  console.log("threads: ", threads)
 
   // Invite modal
   const [inviting, setInviting] = useState(false);
@@ -38,6 +41,8 @@ export default function ForumDetailPage(){
   const [memberProcessingId, setMemberProcessingId] = useState(null);
   const [memberProcessingAction, setMemberProcessingAction] = useState(null); // 'promote' | 'revoke' | 'remove'
 
+  console.log("members: ", members)
+
   // Thread edit/create state
   const [editingThread, setEditingThread] = useState(null);
   const [editTitle, setEditTitle] = useState("");
@@ -57,6 +62,12 @@ export default function ForumDetailPage(){
   // membership action loading
   const [joinLoading, setJoinLoading] = useState(false);
   const [leaveLoading, setLeaveLoading] = useState(false);
+
+  // NEW: ban states (check current user's ban status)
+  const [banNoticeOpen, setBanNoticeOpen] = useState(false);
+  const [banInfo, setBanInfo] = useState(null); // { banned: true, ban: { expires_at, ... } }
+  const [banCountdown, setBanCountdown] = useState(null);
+  const [banChecking, setBanChecking] = useState(false);
 
   useEffect(()=> {
     let mounted = true;
@@ -165,7 +176,61 @@ export default function ForumDetailPage(){
     };
   }, [socket, forumId]);
 
-  const handleThreadClick = (thread) => {
+  // NEW: check current user's ban status (returns the status object)
+  const checkMyBanStatus = async () => {
+    if (!user || !forumId) return { banned: false };
+    setBanChecking(true);
+    try {
+      const res = await fetch(`/api/forum/${forumId}/ban/me`);
+      if (!res.ok) {
+        setBanChecking(false);
+        return { banned: false };
+      }
+      const data = await res.json();
+      setBanChecking(false);
+      return data;
+    } catch (err) {
+      console.error("checkMyBanStatus error", err);
+      setBanChecking(false);
+      return { banned: false };
+    }
+  };
+
+  // NEW: countdown for banInfo
+  useEffect(()=> {
+    if (!banInfo?.banned || !banInfo?.ban?.expires_at) {
+      setBanCountdown(null);
+      return;
+    }
+    const update = () => {
+      const now = Date.now();
+      const end = new Date(banInfo.ban.expires_at).getTime();
+      const diff = Math.max(0, end - now);
+      const days = Math.floor(diff / (24*60*60*1000));
+      const hours = Math.floor((diff % (24*60*60*1000)) / (60*60*1000));
+      const mins = Math.floor((diff % (60*60*1000)) / (60*1000));
+      const secs = Math.floor((diff % (60*1000)) / 1000);
+      setBanCountdown(`${days}d ${hours}h ${mins}m ${secs}s`);
+      if (diff <= 0) {
+        setBanInfo(null);
+        setBanNoticeOpen(false);
+        setBanCountdown(null);
+      }
+    };
+    update();
+    const iv = setInterval(update, 1000);
+    return () => clearInterval(iv);
+  }, [banInfo]);
+
+  // NOTE: updated to async to check ban before navigation
+  const handleThreadClick = async (thread) => {
+    // check if current user is banned
+    const status = await checkMyBanStatus();
+    if (status?.banned) {
+      setBanInfo(status);
+      setBanNoticeOpen(true);
+      return; // prevent navigation
+    }
     navigate(`/tech/forums/${forumId}/threads/${thread.id}`, { state: { thread } });
   };
 
@@ -679,6 +744,17 @@ export default function ForumDetailPage(){
                   Create Thread
                 </button>
               )}
+
+              {/* NEW: Logs button visible only to forum admin */}
+              {isForumAdmin && (
+                <button
+                  onClick={() => navigate(`/tech/forums/${forumId}/toxic`)}
+                  className="flex items-center gap-2 px-3 py-1 bg-gray-800 text-white rounded hover:bg-gray-900 transform transition hover:-translate-y-1 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-gray-400 active:scale-95"
+                >
+                  <FiFileText className="w-4 h-4" />
+                  <span className="text-sm hidden sm:inline">Logs</span>
+                </button>
+              )}
             </>
           ) : (
             <button
@@ -965,6 +1041,36 @@ export default function ForumDetailPage(){
                   {createLoading ? "Creating..." : "Create"}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NEW: Ban notice modal when a user is banned and tries to access threads */}
+      {banNoticeOpen && banInfo?.banned && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded w-full max-w-lg p-6 text-center">
+            <h3 className="text-xl font-semibold text-red-600 mb-3">You have been banned</h3>
+            <p className="text-gray-700 mb-4">
+              You have been banned by the forum admin due to recent toxic behavior.
+            </p>
+
+            <div className="mb-4">
+              <div className="text-sm text-gray-600">Ban in effect</div>
+              <div className="text-lg font-medium">{(banInfo?.ban && banInfo.ban.expires_at) ? (banCountdown || "—") : "Permanent"}</div>
+            </div>
+
+            <div className="flex justify-center gap-2">
+              <button onClick={() => setBanNoticeOpen(false)} className="px-4 py-2 bg-gray-200 rounded">Close</button>
+              <button onClick={async () => {
+                const s = await checkMyBanStatus();
+                if (s?.banned) {
+                  setBanInfo(s);
+                } else {
+                  setBanInfo(null);
+                  setBanNoticeOpen(false);
+                }
+              }} className="px-4 py-2 bg-blue-600 text-white rounded">{banChecking ? "Checking..." : "Refresh"}</button>
             </div>
           </div>
         </div>
