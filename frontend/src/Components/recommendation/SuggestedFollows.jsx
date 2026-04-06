@@ -97,7 +97,7 @@ const SuggestedFollows = () => {
                   className="rounded-full w-10 h-10"
                 />
                 <div>
-                  <p className="font-bold">{person.name}</p>
+                  <p className="font-bold">{person.username}</p>
                   <p className="text-gray-500 text-sm">
                     {person.position || "None"}
                   </p>

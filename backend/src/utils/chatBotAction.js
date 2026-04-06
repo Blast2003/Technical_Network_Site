@@ -14,6 +14,7 @@ const __dirname = path.dirname(__filename);
 import { Post} from '../models/postModel.js';
 import {sequelize} from "../config/database.js";
 import { Op } from "sequelize";
+import { similaritySearch, similaritySearchAll } from '../lib/vectorStore.js';
 
 // const taxonomyKeywords = {
 //   'Core Infrastructure & Operations': ['infrastructure', 'operations', 'servers', 'networking', 'storage', 'virtualization', 'cloud infrastructure', 'system administration'],
@@ -44,7 +45,6 @@ function getKnowledgeContent() {
  */
 
 const conversations = {};
-const globalCache = {}; 
 
 export async function startConversation(id) {
     const threadId = id;
@@ -97,9 +97,9 @@ const NUMBER_WORDS = {
 function extractTopK(input, defaultK = 3) {
   const lower = input.toLowerCase();
 
-  // 1) Try to match an explicit number (digit or word) before “post[s]”
+  // 1) Try to match an explicit number (digit or word) before “post[s]” or "topic[s]"
   const numRegex = new RegExp(
-    `\\b(\\d+|${Object.keys(NUMBER_WORDS).join("|")})\\b(?:\\s+\\w+){0,5}?\\s+posts?\\b`,
+    `\\b(\\d+|${Object.keys(NUMBER_WORDS).join("|")})\\b(?:\\s+\\w+){0,5}?\\s+(?:posts?|topics?)\\b`,
     "i"
   );
   const m = lower.match(numRegex);
@@ -297,233 +297,82 @@ export async function chatResponseFromQueries(threadId, userInput) {
   if (!history) throw new Error("Invalid thread ID; call startConversation first");
   if (typeof userInput !== 'string') throw new Error('userInput must be a string');
 
-  // Build request metadata
-  const dateClause = buildDateClause(userInput);
-  const top_k = extractTopK(userInput, 3);
-  const isPopQuery = isPopularityQuery(userInput);
-  const isTopicQuery = isPopQuery && containsTopicKeywords(userInput);
-  const category = isPopQuery && !isTopicQuery ? 'Type1' : (isPopQuery && isTopicQuery ? 'Type2' : 'Type3');
-  let taxonomy = '';
-  
-  console.log("dateClause: ", dateClause);
-  console.log("top_k: ", top_k);
-  console.log("isPopQuery: ", isPopQuery);
-  console.log("isTopicQuery: ", isTopicQuery);
-  console.log("category: ", category);
-
-  if (isTopicQuery) {
-    taxonomy = await analyzeInputTaxonomy(userInput) || '';
-  }
-
-  console.log("Taxonomy: ", taxonomy);
-
-  // Generate a cache key for exact-match queries
-  const cacheKey = JSON.stringify({ category, dateClause, top_k, taxonomy });
-
-  // 1) Exact match in global cache
-  if (globalCache[cacheKey]) {
-    const { requestEntry, responseEntry } = globalCache[cacheKey];
-    history.push({ role: 'user', content: userInput });
-    history.push({ role: 'assistant', content: responseEntry.content });
-    return responseEntry.content;
-  }
-
-  // 2) Fallback: reuse larger cached results for Type1/Type2
-  if (category === 'Type1' || category === 'Type2') {
-    for (const key in globalCache) {
-      const { requestEntry, responseEntry } = globalCache[key];
-      if (
-        requestEntry.category === category &&
-        requestEntry.dateClause === dateClause &&
-        (category === 'Type1' || requestEntry.taxonomy === taxonomy) &&
-        requestEntry.top_k >= top_k
-      ) {
-        // slice stored rows
-        const allRows = JSON.parse(responseEntry._cachedRows);
-        const sliced = allRows.slice(0, top_k);
-        const content = renderPostsMarkdown(sliced, top_k);
-        history.push({ role: 'user', content: userInput });
-        history.push({ role: 'assistant', content });
-        return content;
-      }
-    }
-  }
-
-  // 3) Proceed with generation for Type1/Type2/Type3
   history.push({ role: 'user', content: userInput });
-  let sqlRaw;
+
+  // Build request metadata (same as before)
+  const top_k = extractTopK(userInput, 3);
+
+  console.log("top_k: ", top_k);
+
   try {
-    if (category === 'Type1') {
-      sqlRaw = `SELECT
-                  p.id,
-                  p.title,
-                  p.text,
-                  p.type,
-                  p.createdAt,
-                  COUNT(DISTINCT pl.user_id) AS LikesNumber,
-                  COUNT(DISTINCT pr.reply_id) AS RepliesNumber
-              FROM posts p
-              LEFT JOIN postlikes pl ON pl.post_id = p.id
-              LEFT JOIN postreplies pr ON pr.post_id = p.id
-              JOIN userposts up ON up.post_id = p.id
-              JOIN users u ON u.id = up.user_id
-              WHERE u.isFrozen = false ${dateClause}
-              GROUP BY
-                  p.id,
-                  p.title,
-                  p.text,
-                  p.type,
-                  p.mainField,
-                  p.createdAt
-              ORDER BY LikesNumber DESC, RepliesNumber DESC
-              LIMIT ${top_k};`
-    } else if (category === 'Type2') {
-      if (!taxonomy || taxonomy === '""') {
-        sqlRaw = `SELECT
-                    p.id,
-                    p.title,
-                    p.text,
-                    p.type,
-                    p.createdAt,
-                    COUNT(DISTINCT pl.user_id) AS LikesNumber,
-                    COUNT(DISTINCT pr.reply_id) AS RepliesNumber
-                FROM posts p
-                LEFT JOIN postlikes pl ON pl.post_id = p.id
-                LEFT JOIN postreplies pr ON pr.post_id = p.id
-                JOIN userposts up ON up.post_id = p.id
-                JOIN users u ON u.id = up.user_id
-                WHERE u.isFrozen = false ${dateClause}
-                GROUP BY
-                    p.id,
-                    p.title,
-                    p.text,
-                    p.type,
-                    p.mainField,
-                    p.createdAt
-                ORDER BY LikesNumber DESC, RepliesNumber DESC
-                LIMIT ${top_k};`
-      } else {
-        const escaped = taxonomy.replace(/%/g, '\\%');
-        sqlRaw = `
-        SELECT
-          p.id,
-          p.title,
-          p.text,
-          p.type,
-          p.mainField,
-          p.createdAt,
-          COUNT(DISTINCT pl.user_id) AS LikesNumber,
-          COUNT(DISTINCT pr.reply_id) AS RepliesNumber
-        FROM posts p
-        LEFT JOIN postlikes pl ON pl.post_id = p.id
-        LEFT JOIN postreplies pr ON pr.post_id = p.id
-        JOIN userposts up ON up.post_id = p.id
-        JOIN users u ON u.id = up.user_id
-        WHERE u.isFrozen = false AND (p.title LIKE CONCAT('%', '${escaped}', '%') OR p.mainField LIKE CONCAT('%', '${escaped}', '%')) ${dateClause}
-        GROUP BY
-          p.id,
-          p.title,
-          p.text,
-          p.type,
-          p.mainField,
-          p.createdAt
-        ORDER BY LikesNumber DESC, RepliesNumber DESC
-        LIMIT ${top_k};
-        `.trim();
+    // 1) Analyze taxonomy / mainField (uses your Ollama-based function)
+    let mainField = "";
+    try {
+      mainField = (await analyzeInputTaxonomy(userInput)) || "";
+    } catch (e) {
+      // if taxonomy analysis fails, fall back to empty string (no field filtering)
+      console.warn("analyzeInputTaxonomy failed:", e && e.message ? e.message : e);
+      mainField = "";
+    }
+
+    console.log("detected mainField:", mainField);
+
+    const candidateFetch = Math.max(top_k * 50, 200); // tune if needed
+    const candidates = await similaritySearchAll(userInput, candidateFetch);
+    console.log(`fetched ${candidates.length} similarity candidates`);
+
+    if (!candidates || candidates.length === 0) {
+      const msg = "No matching posts found for your prompt.";
+      history.push({ role: 'assistant', content: msg });
+      return msg;
+    }
+
+    const normalizedMainField = mainField ? String(mainField).toLowerCase().trim() : "";
+
+    let finalResults = [];
+    if (normalizedMainField) {
+      const fieldMatches = candidates.filter(d => {
+        if (!d || !d.mainField) return false;
+        return String(d.mainField).toLowerCase().includes(normalizedMainField);
+      });
+
+      // take up to top_k from fieldMatches
+      finalResults = fieldMatches.slice(0, top_k);
+
+      // If not enough and we allow fallback, append the best non-field candidates
+      if (finalResults.length < top_k) {
+        const needed = top_k - finalResults.length;
+        // exclude already taken ids
+        const takenIds = new Set(finalResults.map(r => String(r.id)));
+        for (const c of candidates) {
+          if (finalResults.length >= top_k) break;
+          if (!c) continue;
+          if (takenIds.has(String(c.id))) continue;
+          finalResults.push(c);
+          takenIds.add(String(c.id));
+        }
       }
     } else {
-      const answer = 'We do not provide that service!';
-      history.push({ role: 'assistant', content: answer });
-      return answer;
+      // no field requested: just take top_k best candidates
+      finalResults = candidates.slice(0, top_k);
     }
 
-    // Extract and clean SQL
-    const sqlMatches = sqlRaw.match(/```sql([\s\S]*?)```/i);
-    let cleanedSQL = sqlMatches ? sqlMatches[1].trim() : sqlRaw.trim();
-
-
-    // 1) Ensure LIMIT
-    if (!/limit\s+\d+/i.test(cleanedSQL)) {
-      cleanedSQL = cleanedSQL.replace(/;?$/, `\nLIMIT ${top_k};`);
+    // defensive: if still empty, return friendly message
+    if (!finalResults || finalResults.length === 0) {
+      const msg = "No matching posts found after filtering.";
+      history.push({ role: 'assistant', content: msg });
+      return msg;
     }
 
-    // 2) Strip any existing ORDER BY before LIMIT
-    cleanedSQL = cleanedSQL.replace(
-      /ORDER\s+BY[\s\S]*?(?=LIMIT\s+\d+)/i,
-      ''
-    );
+    // Render markdown from the matched rows (matches is the "rows" array)
+    const answerContent = renderPostsMarkdown(finalResults, top_k);
 
-    // 3) Inject canonical ORDER BY if missing
-    const simpleOrder = /ORDER\s+BY\s+LikesNumber\s+DESC\s*;?/i;
-    const fullOrder   = /ORDER\s+BY\s+LikesNumber\s+DESC\s*,\s*RepliesNumber\s+DESC\s*;?/i;
-    const orderClause = 'ORDER BY LikesNumber DESC, RepliesNumber DESC';
-
-    if (!simpleOrder.test(cleanedSQL) && !fullOrder.test(cleanedSQL)) {
-      cleanedSQL = cleanedSQL.replace(
-        /(LIMIT\s+\d+;?)/i,
-        `${orderClause}\n$1`
-      );
-    }
-
-
-    // 4: strip any extra predicates in the WHERE 
-    if(isPopQuery){
-      // Preserve any extra predicates (e.g. topic filters) and just ensure dateClause is present
-      const whereRegex = /(WHERE\s+u\.isFrozen\s*=\s*false)([\s\S]*?)(?=\bGROUP\s+BY\b)/i;
-      const match = cleanedSQL.match(whereRegex);
-      if (match) {
-        const prefix = match[1];             // "WHERE u.isFrozen = false"
-        const existingPredicates = match[2] || ''; // everything after that up to GROUP BY
-
-        let newPredicates = existingPredicates;
-
-        if (dateClause) {
-          // if there's already a createdAt/date predicate, try to replace it; otherwise append
-          if (/\bp\.createdAt\b/i.test(existingPredicates)) {
-            newPredicates = existingPredicates.replace(/\bAND\s+p\.createdAt[^\n]*/i, ` ${dateClause}`);
-          } else {
-            newPredicates = `${existingPredicates} ${dateClause}`;
-          }
-        }
-
-        cleanedSQL = cleanedSQL.replace(whereRegex, `${prefix}${newPredicates}`);
-      }
-    }
-
-    console.log("\ncleanedSQL:", cleanedSQL);
-
-    // start time
-    const startTime = process.hrtime();
-
-    // validate and execute
-    const rawRows = await db.run(cleanedSQL);
-
-    // stop time
-    const [sec, nano] = process.hrtime(startTime);
-
-    const durationSec = sec + nano / 1e9;
-
-    // log execution time + raw rows
-    console.log(`✅ SQL executed in ${durationSec.toFixed(3)} s`);
-    console.log("rawRows:", rawRows);
-
-    // parse and render
-    const rows = JSON.parse(rawRows);
-    const answerContent = renderPostsMarkdown(rows, top_k);
-
-    // Prepare cache entries
-    const requestEntry = { role: 'user', content: userInput, category, dateClause, top_k, taxonomy };
-    const responseEntry = { role: 'assistant', content: answerContent, category, dateClause, top_k, taxonomy, _cachedRows: rawRows };
-
-    // Store in both local and global caches
-    globalCache[cacheKey] = { requestEntry, responseEntry };
-
-    history.push(responseEntry);
+    // Push to conversation history and return
+    history.push({ role: 'assistant', content: answerContent });
     return answerContent;
 
-
   } catch (error) {
-    console.error('❌ SQL processing error:', error);
+    console.error('❌ Retrieval / generation error:', error);
     const msg = 'There was an issue processing your request. Please try again.';
     history.push({ role: 'assistant', content: msg });
     return msg;

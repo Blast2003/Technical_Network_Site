@@ -26,7 +26,7 @@ export async function testDataset(req, res) {
   const {
     datasetPath = path.resolve(process.cwd(), "data", "train.csv"),
     textColumn = null,
-    limit = 100,
+    limit = 2000,
     start = 0,
     useLocalModel = true,
     timeoutMs = 60000,
@@ -72,7 +72,7 @@ export async function testDataset(req, res) {
       try {
         // analyzeToxicityLevel should itself be resilient (fallback heuristic)
         const res = await analyzeToxicityLevel(text, {}, timeoutMs);
-        const out = { level: res.level || 1, explanation: res.explanation || "no-explanation" };
+        const out = { level: res.level || 0, explanation: res.explanation || "no-explanation" };
         cache.set(key, out);
         return out;
       } catch (e) {
@@ -82,7 +82,7 @@ export async function testDataset(req, res) {
       }
     }
     console.warn("Analyzer failed after retries; falling back to neutral result:", lastErr && lastErr.message);
-    const fallback = { level: 1, explanation: "ai-check-failed-or-unclear" };
+    const fallback = { level: 0, explanation: "ai-check-failed-or-unclear" };
     cache.set(key, fallback);
     return fallback;
   }
@@ -131,9 +131,9 @@ export async function testDataset(req, res) {
 
           // call analyzer (cached)
           const aiRes = await callAnalyzer(comment_text);
-          const level = (typeof aiRes.level === "number") ? aiRes.level : 1;
+          const level = (typeof aiRes.level === "number") ? aiRes.level : 0;
           const explanation = aiRes.explanation || "no-explanation";
-          const is_toxic_system = level === 3 ? 1 : 0;
+          const is_toxic_system = level === 1 ? 1 : 0;
 
           // prepare outRow: keep original columns and add new ones
           const outRow = { ...row, level, explanation, is_toxic_system };

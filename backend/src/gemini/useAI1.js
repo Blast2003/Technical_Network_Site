@@ -14,17 +14,17 @@ import { Variables } from "../config/variables.js";
   
 
 
-  const apiKey = Variables.GG_API_KEY;
+  const apiKey = Variables.GG_API_KEY1;
   const genAI = new GoogleGenerativeAI(apiKey);
   
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash-lite",
+    model: "gemini-3.1-flash-lite-preview",
   });
   
   const generationConfig = {
-    temperature: 1,
-    topP: 0.95,
-    topK: 40,
+    temperature: 0,
+    topP: 0.1,
+    topK: 10,
     maxOutputTokens: 8192,
     responseMimeType: "text/plain",
   };
@@ -41,55 +41,54 @@ import { Variables } from "../config/variables.js";
   ];
   
   async function analyzePost(topic, content, hashtag) {
-    const prompting = `User provided the data:
-  topic: ${topic}
-  content: ${content}
-  hashtag: ${hashtag}
-  
-  Topic Analysis:
-  _ Check if the given topic is related to IT.
-  _ Return true if it is, otherwise false.
-  
-  Content Analysis:
-  _ Check if the provided content is relevant to the specific field indicated by the topic (not just general IT).
-  _ Return true if it matches the field of the topic, otherwise false.
-  
-  Hashtag Analysis:
-  _ Check if the provided hashtags relate to the same specific field as the topic.
-  _ Return true if they match, otherwise false.
-  
-  Finally, give me an object that represents the analysis:
-  {
-    topic: true or false,
-    content: true or false,
-    hashtag: true or false
-  }`;
-  
-    const chatSession = model.startChat({
+  const prompting = `
+    You are a strict IT Content Validator. 
+    
+    VALID IT DOMAINS: 
+    Software Development, Hardware, Cybersecurity, Networking, Data Science/Mining, 
+    AI/ML, Cloud Computing, DevOps, IT Support, Database Management.
+
+    EVALUATION RULES:
+    1. "topic" is TRUE if the input Topic belongs to the VALID IT DOMAINS list or is a technical sub-field of IT.
+    2. "content" is TRUE ONLY if it is related to the specific Topic provided.
+    3. "hashtag" is TRUE ONLY if it is related to the specific Topic provided.
+
+    SCENARIO ANALYSIS:
+    - If Topic is "Data Mining" and Content is "Cooking": 
+      Result: { "topic": true, "content": false, "hashtag": false }
+    
+    USER DATA:
+    Topic: "${topic}"
+    Content: "${content}"
+    Hashtag: "${hashtag}"
+
+    Return ONLY a JSON object:
+    {
+      "topic": boolean,
+      "content": boolean,
+      "hashtag": boolean
+    }`;
+
+  const chatSession = model.startChat({
       generationConfig,
       safetySetting,
       history: [],
-    });
-  
-    const result = await chatSession.sendMessage(prompting);
-    const responseText = await result.response.text();
-  
-    // Extract JSON object from response text
+  });
+
+  const result = await chatSession.sendMessage(prompting);
+  let responseText = await result.response.text();
+
+  try {
+    // If you set responseMimeType to "application/json", 
+    // you might not need the regex, but it's safe to keep as a backup.
     const jsonMatch = responseText.match(/{[\s\S]*}/);
-    if (jsonMatch && jsonMatch[0]) {
-      const jsonString = jsonMatch[0];
-      try {
-        const analysis = JSON.parse(jsonString);
-        return analysis;
-      } catch (error) {
-        console.error("Error parsing JSON:", error);
-        return null;
-      }
-    } else {
-      console.error("JSON object not found in response:", responseText);
-      return null;
-    }
+    const analysis = JSON.parse(jsonMatch ? jsonMatch[0] : responseText);
+    return analysis;
+  } catch (error) {
+    console.error("Parsing error:", error);
+    return null;
   }
+}
 
   async function Taxonomy(topic) {
     const prompting = `I have the Taxonomy of IT-Related Fields:

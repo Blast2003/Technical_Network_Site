@@ -1176,7 +1176,7 @@ export const createAnswer = async (req, res) => {
     }, { transaction: t });
 
     // Use the detailed AI classifier (returns {level, explanation})
-    let toxicLevel = 1;
+    let toxicLevel = 0;
     let toxicExplanation = null;
 
     try {
@@ -1185,27 +1185,27 @@ export const createAnswer = async (req, res) => {
         thread: { title: thread.title }
       };
       const aiResult = await analyzeToxicityLevel(content || "", aiContext, 60000);
-      toxicLevel = aiResult && aiResult.level ? aiResult.level : 1;
+      toxicLevel = aiResult && aiResult.level ? aiResult.level : 0;
       console.log("\n\n\n\n\ aaaaaaa: ", toxicLevel);
       toxicExplanation = aiResult && aiResult.explanation ? aiResult.explanation : null;
 
       // Update answer record with level + explanation + toxic flag if level 3
       await answer.update({
-        is_toxic: toxicLevel === 3,
+        is_toxic: toxicLevel === 1,
         toxic_level: toxicLevel,
         toxic_explanation: toxicExplanation,
         toxic_checked_at: new Date()
       }, { transaction: t });
 
       // Create relevant forum audits
-      if (toxicLevel === 3) {
+      if (toxicLevel === 1) {
         await ForumAudit.create({
           actor_id: senderId,
           forum_id: thread.forum_id,
           action: "flag_toxic_answer",
           meta: { answerId: answer.id, level: toxicLevel, explanation: toxicExplanation }
         }, { transaction: t });
-      } else if (toxicLevel === 2) {
+      } else if (toxicLevel === 0) {
         // Medium: record an audit for moderator visibility but DO NOT mark as banned
         await ForumAudit.create({
           actor_id: senderId,
@@ -1219,7 +1219,7 @@ export const createAnswer = async (req, res) => {
       // don't fail request; leave default flags (is_toxic false) and toxic_level default
       await answer.update({
         toxic_checked_at: new Date(),
-        toxic_level: 1,
+        toxic_level: 0,
         toxic_explanation: "ai-check-failed-or-unclear"
       }, { transaction: t });
     }
@@ -1246,7 +1246,7 @@ export const createAnswer = async (req, res) => {
     answerJson.toxic_explanation = toxicExplanation;
 
     // IMPORTANT: only treat level 3 as "banned" (do not broadcast / show to others)
-    if (toxicLevel === 3) {
+    if (toxicLevel === 1) {
       try {
         const socketId = getRecipientSocketId(String(senderId));
         if (socketId) {

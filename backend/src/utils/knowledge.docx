@@ -15,6 +15,7 @@ UI and Navigation:
     - Chatting: Recent chats, new chat search, message previews.
     - Freeze Account: Account deactivation options.
     - Career Path: IT career path grid, details on click.
+    - Forum: Browse list of forums (by IT domain), open a forum to see threads.
 
 - Right Sidebar:
     - Trending Topics: Top 3 topics.
@@ -51,6 +52,17 @@ Website Features:
    • Heart (Like)
 6. Post Creation: 
    • Input topic, content, hashtags
+7. Forum: 
+   • Forum list per domain (Core Infrastructure, Software Dev, Data Eng, AI & Analytics, Security & Ops, Emerging Tech) 
+   • Forum page: threads list (cards) and thread detail (questions list + question detail) 
+   • Thread: contains questions (each question supports image, title, content) 
+   • Question: supports answers and nested replies; creator sees new-answer count badges 
+   • Roles & permissions: GLOBAL_ADMIN, FORUM_ADMIN, MEMBER, Non-member (join required to view private forum content) 
+   • Real-time: new thread/question/answer events via WebSocket; 'new' counters update in real-time for question owners 
+   • Toxicity Check: Real-time analysis of answers during creation. 
+   • Auto-Hidden: Answers identified as toxic are automatically hidden from all users. 
+   • Admin Logging: Toxic content is recorded and reported to administrators for review. 
+   • Sanctions: System supports administrative banning of users based on recorded toxic behavior.
 
 Key Features:
 - Homepage: Followed/recommended posts.
@@ -64,6 +76,8 @@ Key Features:
 - Notifications: Updates.
 - Post Interaction: Comment/like.
 - Post Creation: IT topic, content, hashtags.
+- Forum: Domain-focused discussions, thread/question/answer simple interaction, role-based permissions, image support for thread/question/answer, and realtime updates. Toxicity Filtering.
+
 
 Functionality and Usage:
 - Create Post: Input, topic, content, hashtags.
@@ -79,16 +93,20 @@ Functionality and Usage:
 - Recruitment Posts: Sidebar, listings.
 - Access Chat: Sidebar, conversations.
 - View Profile: Header, profile info.
+- Forum usage: Browse forums from Left Sidebar -> Forum. Join a public forum with a single action; accept invite to join private forums. Open a forum to see threads; click a thread to view questions (paginated, "Show more" loads more). Click a question to view answer tree (nested replies). If you are the question creator, unseen-answer count badges show how many answers you haven't seen; clicking the question marks answers as seen. Create question inside a thread (members only). Create answers and reply to answers (members only). Images can be attached to threads, questions, and answers. Real-time updates: when new answers arrive on your question, a realtime notification increments new badge (if you are the creator). Automated Moderation: When creating an answer, the system automatically scans for toxicity. If toxicity is detected, the answer is instantly hidden from the public. The toxic answer is logged and sent to the Admin dashboard.Admins review logs and can ban the responsible user account.
 
 Limitations:
 - Pricing: Not offered.
 - Post Creation: IT posts only.
 - Freeze: Hides data.
 - Search: Title match, limited filters.
+- Forum: Non-members cannot view private forum content.
+- Toxicity Check: Currently applies to answers only; does not specify application to top-level posts or chat messages.
 
 Chatbot Response Guidelines (Strict):
 - Limitations-Answer: Don't tell anything if user don't ask! 
 - On-Platform: Provide exact steps from the knowledge file.
+- Moderation Answer: Only confirm the existence of the auto-check only in forum feature and admin banning process; do not elaborate on the specific AI models used for detection or the duration of bans unless explicitly listed in the data.
 - Out-of-Scope: **Absolute Restriction:** If the user's query pertains to any feature, service, or concept not explicitly detailed in the provided knowledge base, respond ONLY with 'We do not provide service for that.' or 'I didn't find any information on that.'. Do not offer any alternative suggestions, industry information, or related details. Under no circumstances should the bot provide any information outside of the provided context.
 - Format: Short, direct, factual, based solely on provided data.
 - No Fabrications: Do not add details or functions not explicitly listed.
@@ -97,3 +115,4 @@ Chatbot Response Guidelines (Strict):
 - **No Alternative Suggestions:** Do not suggest or mention any alternative features, services, or industry standards, even if they are related to the user's query. Your responses must be strictly limited to the information within the provided knowledge base.
 - Important Instruction: At the end of each response, regardless of whether the initial prompt contained a question or not, you will only provide the answer to the user's query. You will not include any additional conversational elements, such as follow-up questions like 'Do you want to ask anything else?', greetings beyond the answer, or closing remarks. Your sole purpose is to address the user's request directly and then conclude the interaction for that turn.
 - Responses should be concise, factual, and directly address the user's query. Avoid any extraneous information or conversational fluff.
+- Forum Response: Describe forum interactions only using the specific hierarchy (Forum -> Thread -> Question -> Answer). Do not suggest moderation tools not listed in the CRUD scope.

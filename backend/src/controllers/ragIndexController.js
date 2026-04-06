@@ -9,7 +9,7 @@ import {
 } from "../lib/vectorStore.js";
 
 export async function indexHandler(req, res) {
-  const { models , reindex } = req.body || {};
+  const { models , reindex, dateClause = "" } = req.body || {};
 
   try {
     if (reindex) {
@@ -27,7 +27,7 @@ export async function indexHandler(req, res) {
       }
     }
 
-    const docs = await docsFromDatabase(models);
+    const docs = await docsFromDatabase(models, dateClause);
     if (!docs.length) {
       return res.status(400).json({ ok: false, message: "No docs found" });
     }
@@ -52,6 +52,7 @@ export async function searchHandler(req, res) {
 
   try {
     const matches = await similaritySearch(query, k);
+    // matches are rich objects (id, title, text, type, mainField, createdAt, LikesNumber, RepliesNumber)
     res.json({ ok: true, matches });
   } catch (err) {
     console.error("Search error:", err);

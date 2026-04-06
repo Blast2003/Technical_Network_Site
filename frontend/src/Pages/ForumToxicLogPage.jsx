@@ -2,8 +2,8 @@ import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import loader from "../assets/loader.svg";
 import { toast } from "react-toastify";
-import { FiAlertTriangle } from "react-icons/fi";
-import { FaCheck } from "react-icons/fa";
+import { FiAlertTriangle, FiX } from "react-icons/fi";
+import { FaCheck, FaUserSlash } from "react-icons/fa";
 
 export default function ForumToxicLogPage(){
   const { forumId } = useParams();
@@ -467,38 +467,39 @@ export default function ForumToxicLogPage(){
   };
 
   return (
-    <div className="p-4">
-      <div className="flex items-center justify-between mb-4">
+    <div className="p-6 bg-gray-50 min-h-screen">
+      <div className="flex items-center justify-between mb-6">
         <div>
-          <button onClick={()=> navigate(-1)} className="text-blue-600 hover:underline mr-3">← Back</button> <br/><br/>
-          <h1 className="text-2xl font-semibold inline">Toxic Actions & Management</h1>
+          <button onClick={()=> navigate(-1)} className="text-blue-600 hover:underline mr-3">← Back</button>
+          <h1 className="text-3xl font-extrabold mt-2">Toxic Actions & Management</h1>
+          <p className="text-sm text-gray-500 mt-1">Admin console — review flagged users, inspect actions, and manage bans.</p>
         </div>
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-8">
-          <img width="60" src={loader} alt="loading" />
+        <div className="flex items-center justify-center py-12">
+          <img width="72" src={loader} alt="loading" />
         </div>
       ) : error ? (
         <div className="bg-white p-4 rounded shadow text-red-600">{error}</div>
       ) : list.length === 0 ? (
-        <div className="bg-white p-6 rounded shadow text-center text-gray-500">No toxic activity found</div>
+        <div className="bg-white p-8 rounded shadow text-center text-gray-500">No toxic activity found</div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {list.map(u => {
             const banned = isUserBanned(u.userId);
             const banObj = banned ? bannedMap[u.userId] : null;
             return (
               <div key={u.userId}
                 onClick={() => openUserModal(u)}
-                className="bg-white p-4 rounded shadow hover:shadow-md transform hover:-translate-y-1 transition cursor-pointer"
+                className="bg-white p-4 rounded-2xl shadow-md hover:shadow-xl transform hover:-translate-y-1 transition cursor-pointer border border-gray-100"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <img src={u.profilePic || "https://placehold.co/48x48"} className="w-12 h-12 rounded-full object-cover" alt={u.username} />
+                    <img src={u.profilePic || "https://placehold.co/48x48"} className="w-12 h-12 rounded-full object-cover ring-2 ring-indigo-50" alt={u.username} />
                     <div>
-                      <div className="font-medium">{u.username}</div>
-                      <div className="text-xs text-gray-500">Toxic: <span className="font-semibold">{u.toxic_count}</span></div>
+                      <div className="font-semibold">{u.username}</div>
+                      <div className="text-xs text-gray-500">Toxic: <span className="font-semibold text-indigo-600">{u.toxic_count}</span></div>
                       {banned && banObj?.expires_at ? (
                         <div className="text-xs text-red-600">Banned — expires {new Date(banObj.expires_at).toLocaleString()}</div>
                       ) : banned ? (
@@ -506,10 +507,10 @@ export default function ForumToxicLogPage(){
                       ) : null}
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-4">
-                    {banned && <div className="text-xs px-2 py-2 bg-red-600 text-white rounded">Banned</div>}
+                  <div className="flex flex-col items-end gap-2">
+                    {banned && <div className="text-xs px-2 py-1 bg-red-600 text-white rounded-md">Banned</div>}
                     {!banned && u.recommended_ban?.label ? (
-                      <div className="text-xs px-2 py-1 bg-yellow-100 text-yellow-800 rounded">Recommend: {u.recommended_ban.label}</div>
+                      <div className="text-xs px-2 py-1 bg-yellow-50 text-yellow-800 rounded-md">Recommend: {u.recommended_ban.label}</div>
                     ) : null}
                   </div>
                 </div>
@@ -519,155 +520,166 @@ export default function ForumToxicLogPage(){
         </div>
       )}
 
-      {/* modal for selected user */}
+      {/* modal for selected user - redesigned UI only */}
       {selected && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded w-full max-w-5xl p-6 h-[500px] overflow-auto">
-            <div className="flex items-start justify-between gap-4 mb-4">
-              <div>
-                <div className="flex items-center gap-3">
-                  <img src={selected.profilePic || "https://placehold.co/64x64"} className="w-14 h-14 rounded-full object-cover" alt={selected.username} />
-                  <div>
-                    <div className="text-lg font-semibold">{selected.username}</div>
-                    <div className="text-sm text-gray-500">Total toxic actions: <span className="font-medium">{selected.toxic_count}</span></div>
-                  </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* backdrop */}
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={closeUserModal}></div>
+
+          <div className="relative w-full max-w-4xl mx-4">
+            <div className="bg-gradient-to-br from-white via-indigo-50 to-indigo-100 rounded-2xl shadow-2xl overflow-hidden border border-gray-100">
+
+              {/* Header */}
+              <div className="flex items-center gap-4 p-6 border-b border-indigo-100">
+                <div className="relative">
+                  <img src={selected.profilePic || "https://placehold.co/96x96"} className="w-20 h-20 rounded-full object-cover ring-4 ring-white shadow-lg" alt={selected.username} />
+                  {selectedBanInfo?.banned && (
+                    <div className="absolute -bottom-1 -right-1 bg-red-600 text-white rounded-full p-1 shadow"> 
+                      <FaUserSlash className="w-4 h-4" />
+                    </div>
+                  )}
                 </div>
-                <div className="text-xs text-gray-500 mt-2">Last flagged: {selected.last_toxic_at ? new Date(selected.last_toxic_at).toLocaleString() : '—'}</div>
 
-                {/* show ban countdown or permanent label if user banned */}
-                {selectedBanInfo?.banned && (
-                  <div className="mt-2 text-sm text-red-700">
-                    <strong>Banned — {selectedBanInfo.ban?.expires_at ? "expires in:" : "Permanent"}</strong>
-                    {selectedBanInfo.ban?.expires_at && selectedBanCountdown ? <span className="ml-2">{selectedBanCountdown}</span> : null}
-                  </div>
-                )}
-              </div>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xl font-bold">{selected.username}</div>
+                      <div className="text-sm text-gray-600">Total toxic actions: <span className="font-medium text-indigo-700">{selected.toxic_count}</span></div>
+                      <div className="text-xs text-gray-500 mt-1">Last flagged: {selected.last_toxic_at ? new Date(selected.last_toxic_at).toLocaleString() : '—'}</div>
 
-              <div className="flex items-center gap-2">
-                {/* if user is banned => show Unban button, else show Ban UI */}
-                {selectedBanInfo?.banned ? (
-                  <>
-                    <button
-                      onClick={unbanSelectedUser}
-                      disabled={banProcessing}
-                      className="px-3 py-1 bg-green-600 text-white rounded hover:-translate-y-1 transform transition"
-                    >
-                      {banProcessing ? "Processing..." : "Unban"}
-                    </button>
-                    <button onClick={closeUserModal} className="px-3 py-1 bg-gray-200 rounded hover:-translate-y-1 transform transition">Close</button>
-                  </>
-                ) : (
-                  <>
-                    {/* Ban dropdown */}
-                    <div className="relative">
-                      <button
-                        onClick={() => setBanOpen(prev=>!prev)}
-                        className="px-3 py-1 bg-red-600 text-white rounded hover:-translate-y-1 transform transition flex items-center gap-2"
-                      >
-                        <FiAlertTriangle className="inline mr-0 mb-0" /> Ban
-                      </button>
+                      {selectedBanInfo?.banned && (
+                        <div className="mt-2 inline-flex items-center gap-3 px-3 py-1 rounded-full bg-red-50 text-red-700 text-sm">
+                          <strong>{selectedBanInfo.ban?.expires_at ? 'Banned — expires in' : 'Banned — Permanent'}</strong>
+                          {selectedBanInfo.ban?.expires_at && selectedBanCountdown ? <span className="text-sm">{selectedBanCountdown}</span> : null}
+                        </div>
+                      )}
+                    </div>
 
-                      {banOpen && (
-                        <div className="absolute right-0 mt-2 w-64 bg-white border-2 rounded shadow p-2 z-50">
-                          <div className="text-xs text-gray-500 mb-2 px-1">Select duration</div>
-                          {BAN_OPTIONS.map(opt => {
-                            const recommended = selected.recommended_ban && selected.recommended_ban.duration === opt.key;
-                            const chosen = banSelecting && banSelecting.key === opt.key;
-                            return (
-                              <div
-                                key={opt.key}
-                                onClick={() => setBanSelecting({...opt, recommended})}
-                                className={`flex items-center justify-between gap-2 p-2 rounded cursor-pointer ${chosen ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-100'}`}
-                              >
-                                <div className="flex items-center gap-2">
-                                  <div className="text-sm">{opt.label}</div>
-                                  {recommended ? <div className="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-800 rounded">Recommend</div> : null}
-                                </div>
-                                <div className="text-sm text-green-700">
-                                  {chosen ? <FaCheck /> : ''}
-                                </div>
-                              </div>
-                            );
-                          })}
-
-                          <div className="mt-3 flex items-center justify-end gap-3">
-
-                            <button onClick={()=> { setBanOpen(false); setBanSelecting(null); }} className="px-3 py-1 bg-gray-200 rounded hover:-translate-y-1 transform transition whitespace-nowrap">Cancel</button>
-
-                            {/* Confirm button stacked when selection exists */}
+                    <div className="flex items-center gap-2">
+                      {selectedBanInfo?.banned ? (
+                        <>
+                          <button
+                            onClick={unbanSelectedUser}
+                            disabled={banProcessing}
+                            className="px-3 py-2 bg-white border border-gray-200 text-sm rounded-lg shadow-sm hover:shadow-md transition"
+                          >
+                            {banProcessing ? "Processing..." : "Unban"}
+                          </button>
+                          <button onClick={closeUserModal} className="p-2 rounded-lg bg-gray-50 border hover:bg-gray-100" aria-label="Close modal"><FiX /></button>
+                        </>
+                      ) : (
+                        <>
+                          <div className="relative">
                             <button
-                              onClick={applyBan}
-                              disabled={!banSelecting || banProcessing}
-                              className="px-3 py-1 bg-red-600 text-white rounded hover:-translate-y-1 transform transition"
-                              aria-label={banSelecting ? `Confirm ban ${banSelecting.label}` : "Confirm ban"}
+                              onClick={() => setBanOpen(prev=>!prev)}
+                              className="px-3 py-2 bg-red-600 text-white rounded-lg hover:shadow-md flex items-center gap-2"
                             >
-                              {banProcessing ? (
-                                <span className="whitespace-nowrap">Processing...</span>
-                              ) : (
-                                banSelecting ? (
-                                  <div className="flex flex-col items-center leading-tight">
-                                    <span className="text-sm font-medium">Confirm</span>
-                                    <span className="text-xs opacity-90">({banSelecting.label})</span>
-                                  </div>
-                                ) : (
-                                  <span className="text-sm">Confirm</span>
-                                )
-                              )}
+                              <FiAlertTriangle />
+                              <span className="font-medium">Ban</span>
                             </button>
+
+                            {banOpen && (
+                              <div className="absolute right-0 mt-3 w-72 bg-white rounded-lg shadow-lg border p-3 z-50">
+                                <div className="text-xs text-gray-500 mb-2 px-1">Select duration</div>
+                                <div className="space-y-2">
+                                  {BAN_OPTIONS.map(opt => {
+                                    const recommended = selected.recommended_ban && selected.recommended_ban.duration === opt.key;
+                                    const chosen = banSelecting && banSelecting.key === opt.key;
+                                    return (
+                                      <div
+                                        key={opt.key}
+                                        onClick={() => setBanSelecting({...opt, recommended})}
+                                        className={`flex items-center justify-between gap-2 p-2 rounded cursor-pointer ${chosen ? 'bg-indigo-50 border border-indigo-200' : 'hover:bg-gray-50'}`}
+                                      >
+                                        <div className="flex items-center gap-2">
+                                          <div className="text-sm">{opt.label}</div>
+                                          {recommended ? <div className="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-800 rounded">Recommend</div> : null}
+                                        </div>
+                                        <div className="text-sm text-green-700">{chosen ? <FaCheck /> : ''}</div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+
+                                <div className="mt-3 flex items-center justify-end gap-3">
+                                  <button onClick={()=> { setBanOpen(false); setBanSelecting(null); }} className="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200">Cancel</button>
+                                  <button
+                                    onClick={applyBan}
+                                    disabled={!banSelecting || banProcessing}
+                                    className="px-3 py-1 bg-red-600 text-white rounded hover:shadow-md disabled:opacity-60"
+                                    aria-label={banSelecting ? `Confirm ban ${banSelecting.label}` : "Confirm ban"}
+                                  >
+                                    {banProcessing ? (
+                                      <span className="whitespace-nowrap">Processing...</span>
+                                    ) : (
+                                      banSelecting ? (
+                                        <div className="flex flex-col items-center leading-tight">
+                                          <span className="text-sm font-medium">Confirm</span>
+                                          <span className="text-xs opacity-90">({banSelecting.label})</span>
+                                        </div>
+                                      ) : (
+                                        <span className="text-sm">Confirm</span>
+                                      )
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        </div>
+
+                          <button onClick={closeUserModal} className="ml-2 p-2 rounded-lg bg-gray-50 border hover:bg-gray-100" aria-label="Close modal"><FiX /></button>
+                        </>
                       )}
                     </div>
+                  </div>
+                </div>
+              </div>
 
-                    <button onClick={closeUserModal} className="px-3 py-1 bg-gray-200 rounded hover:-translate-y-1 transform transition">Close</button>
-                  </>
+              {/* Body: actions list */}
+              <div className="p-6 min-h-[400px] max-h-[60vh] overflow-auto">
+                {modalLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <img width="36" src={loader} alt="loading" />
+                  </div>
+                ) : userActions.length === 0 ? (
+                  <div className="text-center text-gray-500 p-6">No toxic actions found for this user.</div>
+                ) : (
+                  <div className="space-y-4">
+                    {userActions.map(a => (
+                      <div key={a.id} className="bg-white p-4 rounded-lg border shadow-sm hover:shadow-md transition">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-3">
+                              <div className="text-sm font-medium text-gray-700">{new Date(a.createdAt).toLocaleString()}</div>
+                              {a.isNew ? (
+                                <div className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-800 animate-pulse">
+                                  New
+                                </div>
+                              ) : null}
+                            </div>
+                            <div className="text-sm text-gray-600 mt-1">{a.content?.slice(0,160)}{a.content && a.content.length > 160 ? '...' : ''}</div>
+                          </div>
+
+                          <div className="flex flex-col items-end gap-2">
+                            <button onClick={() => setExpandedAnswerId(expandedAnswerId === a.id ? null : a.id)} className="px-3 py-1 bg-indigo-50 text-indigo-700 border border-indigo-100 text-sm rounded">{expandedAnswerId === a.id ? 'Hide' : 'Details'}</button>
+                          </div>
+                        </div>
+
+                        {expandedAnswerId === a.id && (
+                          <div className="mt-3 border-t pt-3 text-sm text-gray-700">
+                            <div className="font-semibold">Answer content</div>
+                            <div className="mt-2 whitespace-pre-wrap">{a.content}</div>
+                            <div className="mt-3 text-xs text-gray-500">Belongs to: <button onClick={() => {
+                              if (a.threadId) navigate(`/tech/forums/${forumId}/threads/${a.threadId}`, { state: { threadId: a.threadId }}); 
+                            }} className="text-indigo-600 hover:underline">{a.threadTitle || '—'} (Thread)</button> — question: {a.questionTitle}</div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
-            </div>
 
-            <div>
-              {modalLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <img width="36" src={loader} alt="loading" />
-                </div>
-              ) : userActions.length === 0 ? (
-                <div className="text-center text-gray-500 p-6">No toxic actions found for this user.</div>
-              ) : (
-                <div className="space-y-4">
-                  {userActions.map(a => (
-                    <div key={a.id} className="bg-gray-50 p-3 rounded border mt-2">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="flex items-center gap-3">
-                            <div className="text-sm font-medium">{new Date(a.createdAt).toLocaleString()}</div>
-                            {/* NEW badge */}
-                            {a.isNew ? (
-                              <div className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs bg-green-100 text-green-800 animate-pulse hover:animate-bounce">
-                                New
-                              </div>
-                            ) : null}
-                          </div>
-                          <div className="text-xs text-gray-500 mt-1">Answer preview: <span className="font-medium">{a.content?.slice(0,120)}</span></div>
-                        </div>
-
-                        <div className="flex flex-col items-end gap-2">
-                          <button onClick={() => setExpandedAnswerId(expandedAnswerId === a.id ? null : a.id)} className="px-2 py-1 bg-white border text-sm rounded hover:-translate-y-1 transform transition">Details</button>
-                        </div>
-                      </div>
-
-                      {expandedAnswerId === a.id && (
-                        <div className="mt-3 border-t pt-3 text-sm">
-                          <div className="font-medium">Answer content</div>
-                          <div className="mt-2 whitespace-pre-wrap">{a.content}</div>
-                          <div className="mt-3 text-xs text-gray-500">Belongs to: <button onClick={() => {
-                            if (a.threadId) navigate(`/tech/forums/${forumId}/threads/${a.threadId}`, { state: { threadId: a.threadId }}); 
-                          }} className="text-blue-600 hover:underline">{a.threadTitle || '—'} (Thread)</button> — question: {a.questionTitle}</div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
         </div>

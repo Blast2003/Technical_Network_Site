@@ -188,10 +188,10 @@ const UserProfilePage = () => {
   }
 
   return (
-    <div className="bg-gray-100 min-h-screen">
+    <div className="bg-gray-200 min-h-screen">
       <div className="flex flex-col md:flex-row justify-center">
         {/* LEFT NAVIGATION */}
-        <aside className={`sm:items-center sm:justify-center md:block md:w-66 p-4 ${currentUser ? 'lg:h-[560px]' : 'lg:h-[120px]'}`}>
+        <aside className={`sm:items-center sm:justify-center md:block md:w-66 p-4 ${currentUser ? 'lg:h-[590px]' : 'lg:h-[120px]'}`}>
           <div className="bg-white rounded-lg shadow p-4 h-full mt-8">
             <LeftNav />
           </div>

@@ -15,4 +15,6 @@ export const Variables = {
     CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY,
     CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET,
     GG_API_KEY: process.env.GG_API_KEY,
+    GG_API_KEY1: process.env.GG_API_KEY1,
+    GG_API_KEY2: process.env.GG_API_KEY2,
 }

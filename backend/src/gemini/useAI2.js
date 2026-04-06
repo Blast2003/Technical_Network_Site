@@ -3,11 +3,11 @@
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import { Variables } from "../config/variables.js"; 
 
-const apiKey = Variables.GG_API_KEY;
+const apiKey = Variables.GG_API_KEY2;
 const genAI = new GoogleGenerativeAI(apiKey);
 
 const model = genAI.getGenerativeModel({
-  model: "gemini-2.5-flash-lite",
+  model: "gemini-3.1-flash-lite-preview",
 });
 
 const generationConfig = {
@@ -59,6 +59,8 @@ Emerging Technologies
 
 Read the script below: 
 
+PRIORITY RULE: Analyze the user's 'position' and 'bio' in the userInfo JSON first. This profile data takes precedence in determining the correct Taxonomy. Use the user-generated posts only as secondary evidence or if the profile data is empty.
+
 I have the user information in form of json (sometime the user is a new user and position or bio of them maybe is null or empty string):
 ${JSON.stringify(userInfo, null, 2)}
 
@@ -79,6 +81,7 @@ Only return the answer is the name of only one taxonomy or the empty string ""`;
     // wrap sendMessage with timeout to avoid long blocking
     const result = await withTimeout(chatSession.sendMessage(prompting), timeoutMs);
     const responseText = await result.response.text();
+    console.log("\n\n\n\nresponseText from recommendation post: \n\n\n", responseText)
     return responseText;
   } catch (err) {
     console.error("AI analyze error:", err.message);

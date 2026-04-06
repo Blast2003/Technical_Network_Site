@@ -576,8 +576,9 @@ export const getSuggestedUsers = async (req, res) => {
 
         const filteredRecommended = recommendedUsers.filter(u => {
           return u.id !== userId &&
-                 !followingIds.includes(u.id) &&
-                 !suggestions.some(suggestion => suggestion.id === u.id);
+                !followingIds.map(String).includes(String(u.id)) && 
+                // Use String() to ensure strict equality doesn't fail
+                !suggestions.some(s => String(s.id) === String(u.id));
         });
 
         filteredRecommended.slice(0, 2).forEach(u => {
@@ -603,12 +604,27 @@ export const getSuggestedUsers = async (req, res) => {
       suggestions = suggestions.concat(additionalUsers);
     }
 
-    const nonRecommended = suggestions.filter(s => s.recommend !== true);
-    const recommended = suggestions.filter(s => s.recommend === true);
+    const uniqueMap = new Map();
+
+    suggestions.sort((a, b) => (a.recommend === b.recommend ? 0 : a.recommend ? 1 : -1));
+
+    suggestions.forEach(user => {
+      const data = user.toJSON ? user.toJSON() : user;
+      uniqueMap.set(String(data.id), data);
+    });
+
+    // Convert Map back to Array
+    const dedupedSuggestions = Array.from(uniqueMap.values());
+
+    // Separate and limit
+    const recommended = dedupedSuggestions.filter(s => s.recommend === true);
+    const nonRecommended = dedupedSuggestions.filter(s => s.recommend !== true);
 
     const totalCount = 5;
-    const nonRecCount = Math.max(totalCount - recommended.length, 0);
-    const finalSuggestions = nonRecommended.slice(0, nonRecCount).concat(recommended);
+    const nonRecLimit = Math.max(totalCount - recommended.length, 0);
+
+    // Combine: Recommended users first (or last, based on your UI preference)
+    const finalSuggestions = recommended.concat(nonRecommended).slice(0, totalCount);
 
     return res.status(200).json(finalSuggestions);
   } catch (error) {

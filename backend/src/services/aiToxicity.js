@@ -6,9 +6,13 @@ import ollama from "ollama";
  * - Expects Ollama running at OLLAMA_HOST (default: http://localhost:11434)
  * - Uses model from OLLAMA_MODEL (default: llama3.2)
  *
- * Returns { level: 1|2|3, explanation: string }
+ * New scale:
+ * 0 => Not toxic / acceptable (includes constructive criticism, insults/harsh words considered tolerable for community context)
+ * 1 => Extremely toxic: severe insults, explicit threats, hate speech, sexual harassment, explicit calls to violence — hide/ban.
  *
- * Fail-safe: on any error returns { level: 1, explanation: "ai-check-failed-or-unclear" }
+ * Returns { level: 0|1, explanation: string }
+ *
+ * Fail-safe: on any error returns heuristic result (prefer safe = 0 unless severe terms found).
  */
 
 const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://localhost:11434";
@@ -25,27 +29,24 @@ function withTimeout(promise, ms) {
   ]).finally(() => clearTimeout(timer));
 }
 
-// local heuristic fallback (keeps same rules as previous versions)
+// local heuristic fallback (maps to new 0/1 scale)
 function heuristicFromText(text) {
   const lower = String(text || "").toLowerCase();
-  const severe = ["nigger", "faggot", "slur"];
-  const obscene = ["fuck", "shit", "damn", "bitch", "bastard"];
-  const threats = ["kill", "i will kill", "i'll kill", "die", "i will hurt you", "i'll hurt you"];
-  const insults = ["stupid", "idiot", "moron", "you suck", "dumb"];
-  const identity = ["brown people", "muslims", "jews", "black people", "gays"];
 
+  // severe indicators -> level 1
+  const severe = ["nigger", "faggot", "slur"]; // explicit slurs / extremely abusive language
+  const threats = ["kill", "i will kill", "i'll kill", "i will hurt you", "i'll hurt you", "die", "rape", "i will rape"];
+  // milder obscene/insulting language treated as acceptable (0) under the new scheme
   if (severe.some(s => lower.includes(s)) || threats.some(s => lower.includes(s))) {
-    return { level: 3, explanation: "contains severe slur or explicit threat" };
+    return { level: 1, explanation: "contains severe slur or explicit threat" };
   }
-  if (obscene.some(s => lower.includes(s)) || insults.some(s => lower.includes(s)) || identity.some(s => lower.includes(s))) {
-    return { level: 2, explanation: "insulting or obscene language detected" };
-  }
-  return { level: 1, explanation: "no clear toxicity detected" };
+  // default: not extremely toxic
+  return { level: 0, explanation: "no clear extreme toxicity detected" };
 }
 
 export async function analyzeToxicityLevel(content, context = {}, timeoutMs = 60000) {
   if (!content || content.trim().length === 0) {
-    return { level: 1, explanation: "empty-content" };
+    return { level: 0, explanation: "empty-content" };
   }
 
   // Build prompt that *requires* valid JSON only
@@ -58,30 +59,23 @@ export async function analyzeToxicityLevel(content, context = {}, timeoutMs = 60
     : "";
 
   const systemMessage = `
-You are a toxicity classifier used by a forum. You MUST respond with VALID JSON ONLY (no surrounding commentary or markdown).
-Return exactly an object with two keys:
-- "level": an integer 1, 2, or 3
-- "explanation": a short string (one or two sentences) that justifies the level.
+You are a technical forum moderator. Your ONLY job is to separate personal attacks from blunt technical feedback.
 
-Definitions:
-1 => Not toxic / acceptable. Constructive criticism, neutral or polite language, inoffensive jokes.
-2 => Medium toxic but contextually acceptable: insults or harsh words but not severe threats/hate. Show to users but flag for moderator review.
-3 => Extremely toxic: severe insults, threats, hate speech, sexual harassment, or explicit calls to violence — hide / ban.
+CRITICAL RULE: 
+- Level 0: Criticism of the WORK, the CODE, the POST effort, or the QUALITY of the post. (e.g., "This is a bad question", "This question is lazy", "This code is terrible", "This is a dumb approach").
+- Level 1: Criticism of the HUMAN, slurs, threats, or useless swearing. (e.g., "You are lazy", "You are bad", "You are an idiot", "Fuck you").
 
-Use the following context when deciding:
-${threadSnippet ? threadSnippet + "\n" : ""}${questionSnippet ? questionSnippet + "\n" : ""}
+EXAMPLES:
+- "This is a bad question" -> {"level": 0, "explanation": "Criticism of the post quality, not the person."}
+- "This code is garbage" -> {"level": 0, "explanation": "Criticism of the work product."}
+- "You are a garbage developer" -> {"level": 1, "explanation": "Direct personal attack on the user's identity."}
 
-Now analyze the following answer text and return JSON only:
-
-Answer text:
-"""${safeContent}"""
+Analyze the following content and respond in VALID JSON ONLY: {"level": 0|1, "explanation": "string"}
 `;
 
   try {
-    // Make the Ollama chat call
     const messages = [
       { role: "system", content: systemMessage },
-      // place the content in a user message as well for some models that prefer it
       { role: "user", content: safeContent }
     ];
 
@@ -89,7 +83,6 @@ Answer text:
       model: OLLAMA_MODEL,
       baseUrl: OLLAMA_HOST,
       options: {
-        // tune these as needed
         num_ctx: 2048,
         temperature: 0,
       },
@@ -97,7 +90,6 @@ Answer text:
     });
 
     const result = await withTimeout(chatPromise, timeoutMs);
-    // Ollama response shape in your environment: response.message.content (as in your snippet)
     const txtRaw = (result?.message?.content || "").trim();
 
     // Helper: attempt to extract JSON substring
@@ -109,7 +101,7 @@ Answer text:
         try {
           return JSON.parse(sub);
         } catch (e) {
-          // fallthrough to heuristics
+          // fallthrough
         }
       }
       return null;
@@ -119,7 +111,7 @@ Answer text:
 
     if (!parsed) {
       // attempt loose parse e.g. "level: 2 explanation: ..."
-      const levelMatch = txtRaw.match(/level\s*[:=]\s*([123])/i);
+      const levelMatch = txtRaw.match(/level\s*[:=]\s*([0-9])/i);
       const explMatch = txtRaw.match(/explanation\s*[:=]\s*["']([^"']+)["']/i) || txtRaw.match(/"(.*?)"/);
       if (levelMatch) {
         parsed = { level: parseInt(levelMatch[1], 10), explanation: explMatch ? (explMatch[1].trim()) : (txtRaw.slice(0, 200).trim()) };
@@ -127,29 +119,35 @@ Answer text:
     }
 
     if (parsed && typeof parsed.level === "number") {
-      const level = Math.min(3, Math.max(1, Math.floor(parsed.level)));
+      // Accept either model returning 0/1 (new) or legacy 1/2/3 (old).
+      let rawLevel = Math.floor(parsed.level);
+      let level;
+      if (rawLevel === 0 || rawLevel === 1) {
+        level = rawLevel;
+      } else {
+        // legacy mapping: 1 or 2 -> 0 (not extreme), 3 -> 1 (extreme)
+        level = (rawLevel >= 3) ? 1 : 0;
+      }
+
       const explanation = parsed.explanation ? String(parsed.explanation).trim().slice(0, 1000) : "no-explanation-provided";
       return { level, explanation };
     }
 
-    // fallback heuristics looking at assistant text
+    // fallback heuristics on assistant text
     const lower = txtRaw.toLowerCase();
-    if (/\b(threat|kill|rape|i will|die)\b/.test(lower) || /\b(nigger|faggot|slur)\b/.test(lower)) {
-      return { level: 3, explanation: "contains severe abusive language or threats" };
-    }
-    if (/\b(stupid|idiot|dumb|you suck|moron)\b/.test(lower)) {
-      return { level: 2, explanation: "insulting language detected but not extreme" };
+    if (/\b(threat|kill|rape|i will|i'll|die)\b/.test(lower) || /\b(nigger|faggot|slur)\b/.test(lower)) {
+      return { level: 1, explanation: "contains severe abusive language or threats" };
     }
 
-    // default safe if nothing found
-    return { level: 1, explanation: "no clear toxicity detected" };
+    // default safe (not extreme)
+    return { level: 0, explanation: "no clear extreme toxicity detected" };
   } catch (err) {
     console.error("analyzeToxicityLevel (Ollama) error:", err && err.message ? err.message : err);
-    // fail-safe fallback to heuristic (do not ban on model error)
+    // fail-safe fallback to heuristic (do not ban on model error unless clear severe terms)
     try {
       return heuristicFromText(content);
     } catch (e) {
-      return { level: 1, explanation: "ai-check-failed-or-unclear" };
+      return { level: 0, explanation: "ai-check-failed-or-unclear" };
     }
   }
 }

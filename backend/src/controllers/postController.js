@@ -17,7 +17,11 @@ export const createPost = async (req, res) => {
 	  const { postedBy, text, title, type, hashtag } = req.body;
 	  let {sourceType} = req.body;
 	  let { img } = req.body;
-  
+		
+		console.log("title: ", title)
+		console.log("text: ", text)
+		console.log("hashtag: ", hashtag)
+
 	  if (!postedBy || !text || !title || !type || !hashtag) {
 		return res.status(400).json({ error: "All fields are required" });
 	  }
@@ -30,7 +34,7 @@ export const createPost = async (req, res) => {
 	  // check post is related to IT or not
 	  const analyzeObject = await analyzePost(title, text, hashtag);
 	  
-	//   console.log(analyzeObject)
+	   console.log(analyzeObject)
 
 	  if(analyzeObject){
 		if(!analyzeObject.topic){
